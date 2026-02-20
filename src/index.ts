@@ -4,12 +4,8 @@ import { logger } from "hono/logger";
 import { prettyJSON } from "hono/pretty-json";
 import home from "./api/pages/home";
 import trending from "./api/pages/trending";
-import {
-  scrapeGenre,
-  scrapeGenreList,
-  scrapeSearch,
-  scrapeSeries,
-} from "./lib/scraper";
+import genre from "./api/pages/genre";
+import { scrapeGenreList, scrapeSearch, scrapeSeries } from "./lib/scraper";
 
 const app = new Hono().basePath("/api");
 
@@ -22,13 +18,13 @@ app.use("*", prettyJSON());
 app.route("/home", home);
 
 // ─── Trending ─────────────────────────────────────────────────────────────────
-// Handles all of:
-//   GET /api/trending            → page 1
-//   GET /api/trending?page=N     → page N via query param
-//   GET /api/trending/N          → page N via path param
+// GET /api/trending
+// GET /api/trending?page=N
+// GET /api/trending/:page
 app.route("/trending", trending);
 
 // ─── Genres ───────────────────────────────────────────────────────────────────
+// GET /api/genres  — full genre list
 app.get("/genres", async (c) => {
   try {
     const data = await scrapeGenreList();
@@ -38,18 +34,13 @@ app.get("/genres", async (c) => {
   }
 });
 
-app.get("/genre/:slug", async (c) => {
-  const slug = c.req.param("slug");
-  const page = parseInt(c.req.query("page") ?? "1", 10);
-  try {
-    const data = await scrapeGenre(slug, page);
-    return c.json({ success: true, data, meta: { scrapedAt: new Date().toISOString() } });
-  } catch (err) {
-    return c.json({ success: false, error: (err as Error).message }, 500);
-  }
-});
+// GET /api/genre/:slug
+// GET /api/genre/:slug?page=N
+// GET /api/genre/:slug/:page
+app.route("/genre", genre);
 
 // ─── Series ───────────────────────────────────────────────────────────────────
+// GET /api/series/:slug
 app.get("/series/:slug", async (c) => {
   const slug = c.req.param("slug");
   try {
@@ -61,6 +52,7 @@ app.get("/series/:slug", async (c) => {
 });
 
 // ─── Search ───────────────────────────────────────────────────────────────────
+// GET /api/search?q=:query&page=1
 app.get("/search", async (c) => {
   const query = c.req.query("q") ?? "";
   const page = parseInt(c.req.query("page") ?? "1", 10);
@@ -90,7 +82,9 @@ app.notFound((c) =>
         "GET /api/trending?page=N",
         "GET /api/trending/:page",
         "GET /api/genres",
-        "GET /api/genre/:slug?page=1",
+        "GET /api/genre/:slug",
+        "GET /api/genre/:slug?page=N",
+        "GET /api/genre/:slug/:page",
         "GET /api/series/:slug",
         "GET /api/search?q=:query&page=1",
         "GET /api/health",
