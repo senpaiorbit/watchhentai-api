@@ -32,8 +32,6 @@ app.get("/trending", async (c) => {
 });
 
 // ─── Genres ───────────────────────────────────────────────────────────────────
-
-/** GET /api/genres — list all genres from the navigation */
 app.get("/genres", async (c) => {
   try {
     const data = await scrapeGenreList();
@@ -43,7 +41,6 @@ app.get("/genres", async (c) => {
   }
 });
 
-/** GET /api/genre/:slug?page=1 — browse a genre listing */
 app.get("/genre/:slug", async (c) => {
   const slug = c.req.param("slug");
   const page = parseInt(c.req.query("page") ?? "1", 10);
@@ -56,8 +53,6 @@ app.get("/genre/:slug", async (c) => {
 });
 
 // ─── Series ───────────────────────────────────────────────────────────────────
-
-/** GET /api/series/:slug — get a single series with its episodes */
 app.get("/series/:slug", async (c) => {
   const slug = c.req.param("slug");
   try {
@@ -69,16 +64,10 @@ app.get("/series/:slug", async (c) => {
 });
 
 // ─── Search ───────────────────────────────────────────────────────────────────
-
-/** GET /api/search?q=overflow&page=1 */
 app.get("/search", async (c) => {
   const query = c.req.query("q") ?? "";
   const page = parseInt(c.req.query("page") ?? "1", 10);
-
-  if (!query) {
-    return c.json({ success: false, error: "Missing query parameter: q" }, 400);
-  }
-
+  if (!query) return c.json({ success: false, error: "Missing query parameter: q" }, 400);
   try {
     const data = await scrapeSearch(query, page);
     return c.json({ success: true, data, meta: { scrapedAt: new Date().toISOString() } });
