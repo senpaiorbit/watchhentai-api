@@ -6,6 +6,7 @@ import home from "./api/pages/home";
 import trending from "./api/pages/trending";
 import genre from "./api/pages/genre";
 import videos from "./api/pages/videos";
+import uncensored from "./api/pages/uncensored";
 import { scrapeGenreList, scrapeSearch, scrapeSeries } from "./lib/scraper";
 
 const app = new Hono().basePath("/api");
@@ -29,6 +30,12 @@ app.route("/trending", trending);
 // GET /api/videos?page=N
 // GET /api/videos/:page
 app.route("/videos", videos);
+
+// ─── Uncensored ───────────────────────────────────────────────────────────────
+// GET /api/uncensored
+// GET /api/uncensored?page=N
+// GET /api/uncensored/:page
+app.route("/uncensored", uncensored);
 
 // ─── Genres ───────────────────────────────────────────────────────────────────
 // GET /api/genres
@@ -91,6 +98,9 @@ app.notFound((c) =>
         "GET /api/videos",
         "GET /api/videos?page=N",
         "GET /api/videos/:page",
+        "GET /api/uncensored",
+        "GET /api/uncensored?page=N",
+        "GET /api/uncensored/:page",
         "GET /api/genres",
         "GET /api/genre/:slug",
         "GET /api/genre/:slug?page=N",
