@@ -3,12 +3,12 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { prettyJSON } from "hono/pretty-json";
 import home from "./api/pages/home";
+import trending from "./api/pages/trending";
 import {
   scrapeGenre,
   scrapeGenreList,
   scrapeSearch,
   scrapeSeries,
-  scrapeTrending,
 } from "./lib/scraper";
 
 const app = new Hono().basePath("/api");
@@ -22,14 +22,11 @@ app.use("*", prettyJSON());
 app.route("/home", home);
 
 // ─── Trending ─────────────────────────────────────────────────────────────────
-app.get("/trending", async (c) => {
-  try {
-    const data = await scrapeTrending();
-    return c.json({ success: true, data, meta: { scrapedAt: new Date().toISOString() } });
-  } catch (err) {
-    return c.json({ success: false, error: (err as Error).message }, 500);
-  }
-});
+// Handles all of:
+//   GET /api/trending            → page 1
+//   GET /api/trending?page=N     → page N via query param
+//   GET /api/trending/N          → page N via path param
+app.route("/trending", trending);
 
 // ─── Genres ───────────────────────────────────────────────────────────────────
 app.get("/genres", async (c) => {
@@ -90,6 +87,8 @@ app.notFound((c) =>
       available: [
         "GET /api/home",
         "GET /api/trending",
+        "GET /api/trending?page=N",
+        "GET /api/trending/:page",
         "GET /api/genres",
         "GET /api/genre/:slug?page=1",
         "GET /api/series/:slug",
