@@ -4,15 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "vercel dev",
-    "build": "tsc",
-    "start": "node dist/index.js"
+    "build": "tsc --noEmit"
   },
   "dependencies": {
     "hono": "^4.4.0"
   },
   "devDependencies": {
     "@vercel/node": "^3.0.0",
-    "typescript": "^5.4.0",
-    "vercel": "^34.0.0"
+    "typescript": "^5.4.0"
   }
 }
