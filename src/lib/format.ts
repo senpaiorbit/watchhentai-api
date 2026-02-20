@@ -1,8 +1,6 @@
 import { config } from "../config";
 
-/**
- * Resolve a relative URL to an absolute URL using the base URL from config.
- */
+/** Resolve a relative URL to an absolute URL. */
 export function resolveUrl(url: string): string {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
@@ -10,17 +8,13 @@ export function resolveUrl(url: string): string {
   return `${config.baseUrl}${url.startsWith("/") ? "" : "/"}${url}`;
 }
 
-/**
- * Clean and trim text content.
- */
+/** Clean and trim text content. */
 export function cleanText(text: string | null | undefined): string {
   if (!text) return "";
   return text.replace(/\s+/g, " ").trim();
 }
 
-/**
- * Parse a view count string like "2.3k", "127.5k", "1.4m" into a number.
- */
+/** Parse a view count string like "2.3k", "127.5k" into a number. */
 export function parseViewCount(raw: string): number {
   const cleaned = raw.replace(/,/g, "").trim().toLowerCase();
   const match = cleaned.match(/^([\d.]+)(k|m)?$/);
@@ -31,19 +25,14 @@ export function parseViewCount(raw: string): number {
   return Math.round(num);
 }
 
-/**
- * Parse a relative time string like "1 day ago", "2 weeks ago" into an ISO date string.
- */
+/** Parse a relative time string like "1 day ago" into an ISO date string. */
 export function parseRelativeTime(raw: string): string | null {
   const cleaned = raw.trim().toLowerCase();
   const now = new Date();
-
   const match = cleaned.match(/(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago/);
   if (!match) return null;
-
   const amount = parseInt(match[1], 10);
   const unit = match[2];
-
   const ms: Record<string, number> = {
     second: 1000,
     minute: 60 * 1000,
@@ -53,17 +42,13 @@ export function parseRelativeTime(raw: string): string | null {
     month: 30 * 24 * 60 * 60 * 1000,
     year: 365 * 24 * 60 * 60 * 1000,
   };
-
   const date = new Date(now.getTime() - amount * (ms[unit] ?? 0));
   return date.toISOString();
 }
 
-/**
- * Normalize a thumbnail URL — strips timthumb wrappers if needed.
- */
+/** Normalize a thumbnail URL — strips timthumb wrappers if needed. */
 export function normalizeThumbnail(src: string): string {
   if (!src) return "";
-  // Extract the original src from timthumb wrappers
   const match = src.match(/[?&]src=([^&]+)/);
   if (match) {
     try {
@@ -75,9 +60,6 @@ export function normalizeThumbnail(src: string): string {
   return src;
 }
 
-/**
- * Format a complete episode item.
- */
 export interface EpisodeItem {
   id: string;
   title: string;
@@ -85,16 +67,13 @@ export interface EpisodeItem {
   episode: string;
   url: string;
   thumbnail: string;
-  subType: "SUB" | "DUB" | string;
+  subType: string;
   censored: boolean;
   views: number;
   uploadedAt: string | null;
   uploadedAtRaw: string;
 }
 
-/**
- * Format a series/show item.
- */
 export interface SeriesItem {
   id: string;
   title: string;
@@ -104,9 +83,6 @@ export interface SeriesItem {
   censored: boolean;
 }
 
-/**
- * Format a slider item.
- */
 export interface SliderItem {
   id: string;
   title: string;
