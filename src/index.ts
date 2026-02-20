@@ -5,6 +5,7 @@ import { prettyJSON } from "hono/pretty-json";
 import home from "./api/pages/home";
 import trending from "./api/pages/trending";
 import genre from "./api/pages/genre";
+import videos from "./api/pages/videos";
 import { scrapeGenreList, scrapeSearch, scrapeSeries } from "./lib/scraper";
 
 const app = new Hono().basePath("/api");
@@ -23,8 +24,14 @@ app.route("/home", home);
 // GET /api/trending/:page
 app.route("/trending", trending);
 
+// ─── Episodes / Videos ───────────────────────────────────────────────────────
+// GET /api/videos
+// GET /api/videos?page=N
+// GET /api/videos/:page
+app.route("/videos", videos);
+
 // ─── Genres ───────────────────────────────────────────────────────────────────
-// GET /api/genres  — full genre list
+// GET /api/genres
 app.get("/genres", async (c) => {
   try {
     const data = await scrapeGenreList();
@@ -81,6 +88,9 @@ app.notFound((c) =>
         "GET /api/trending",
         "GET /api/trending?page=N",
         "GET /api/trending/:page",
+        "GET /api/videos",
+        "GET /api/videos?page=N",
+        "GET /api/videos/:page",
         "GET /api/genres",
         "GET /api/genre/:slug",
         "GET /api/genre/:slug?page=N",
