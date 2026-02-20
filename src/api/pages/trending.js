@@ -6,18 +6,17 @@ const trending = new Hono();
 
 /**
  * GET /api/trending?page=1
- * Returns trending series with pagination support.
- * Page info is extracted from the pagination block on the page.
+ * GET /api/trending/?page=1   (alias, both work)
+ * Returns trending series with pagination (48 pages total).
  */
 trending.get("/", async (c) => {
-  const page = parseInt(c.req.query("page") ?? "1", 10);
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10));
 
   try {
     const path = page > 1 ? `/trending/page/${page}/` : `/trending/`;
     const html = await fetchPage(path);
     const doc = new HtmlDoc(html);
 
-    // Parse items — same article structure as rest of site
     const items = doc.articles()
       .filter((art) => art.html.includes("item tvshows"))
       .map((art) => {
@@ -25,8 +24,15 @@ trending.get("/", async (c) => {
         const href = art.attr("a", "href");
         const title = art.tagText("h3") || cleanText(art.attr("img", "alt"));
         const poster = art.attr("img", "data-src");
-        const yearMatch = art.html.match(/buttonyear[^>]*>.*?(\d{4})/s);
+
+        // Fix: correctly extract year from:
+        // <div class="buttonyear"><span style="margin:5px">2023</span></div>
+        // Old regex used /s flag on buttonyear pattern which missed whitespace between tags
+        const yearMatch = art.html.match(
+          /class="buttonyear"[^>]*>[\s\S]*?<span[^>]*>\s*(\d{4})\s*<\/span>/i
+        );
         const year = yearMatch ? yearMatch[1] : "";
+
         const censored = !art.html.includes("buttonuncensured");
 
         return {
@@ -39,7 +45,7 @@ trending.get("/", async (c) => {
         };
       });
 
-    // Extract pagination info
+    // Extract "Page X of Y" from pagination block
     const pageMatch = html.match(/Page\s+(\d+)\s+of\s+(\d+)/i);
     const currentPage = pageMatch ? parseInt(pageMatch[1], 10) : page;
     const totalPages = pageMatch ? parseInt(pageMatch[2], 10) : 1;
