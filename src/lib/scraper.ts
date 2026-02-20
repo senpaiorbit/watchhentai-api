@@ -1,280 +1,272 @@
-import { config } from "../config";
-import {
-  cleanText,
-  normalizeThumbnail,
-  parseRelativeTime,
-  parseViewCount,
-  resolveUrl,
-  type EpisodeItem,
-  type SeriesItem,
-  type SliderItem,
-} from "./format";
+const BASE_URL = "https://watchhentai.net";
 
-// ─── Fetch ────────────────────────────────────────────────────────────────────
+// ─── HTTP ────────────────────────────────────────────────────────────────────
 
-export async function fetchPage(path: string = "/"): Promise<string> {
-  const url = path.startsWith("http") ? path : `${config.baseUrl}${path}`;
+export async function fetchPage(path: string): Promise<string> {
+  const url = `${BASE_URL}${path}`;
   const res = await fetch(url, {
-    headers: config.defaultHeaders,
-    signal: AbortSignal.timeout(config.timeout),
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Accept: "text/html,application/xhtml+xml",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch ${url}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.text();
 }
 
-// ─── Mini HTML Doc ────────────────────────────────────────────────────────────
+// ─── Shared article parser (works for home, trending, genre, search) ─────────
 
-export class HtmlDoc {
-  constructor(public html: string) {}
-
-  private blocks(tag: string, html = this.html): string[] {
-    const results: string[] = [];
-    const openRe = new RegExp(`<${tag}(?:\\s[^>]*)?>`, "gi");
-    const closeTag = `</${tag}>`;
-    let match: RegExpExecArray | null;
-    while ((match = openRe.exec(html)) !== null) {
-      const start = match.index;
-      const closeIdx = html.toLowerCase().indexOf(closeTag.toLowerCase(), start + match[0].length);
-      if (closeIdx === -1) { results.push(match[0]); continue; }
-      results.push(html.slice(start, closeIdx + closeTag.length));
-    }
-    return results;
-  }
-
-  articles(): HtmlDoc[] {
-    return this.blocks("article").map((h) => new HtmlDoc(h));
-  }
-
-  attr(tag: string, attribute: string, html = this.html): string {
-    const re = new RegExp(`<${tag}(?:\\s[^>]*)?>`, "i");
-    const m = html.match(re);
-    if (!m) return "";
-    const attrRe = new RegExp(`${attribute}=["']([^"']*?)["']`, "i");
-    const am = m[0].match(attrRe);
-    return am ? am[1] : "";
-  }
-
-  attrs(tag: string, attribute: string): string[] {
-    const re = new RegExp(`<${tag}(?:\\s[^>]*)?>`, "gi");
-    const results: string[] = [];
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(this.html)) !== null) {
-      const attrRe = new RegExp(`${attribute}=["']([^"']*?)["']`, "i");
-      const am = m[0].match(attrRe);
-      if (am) results.push(am[1]);
-    }
-    return results;
-  }
-
-  text(html = this.html): string {
-    return cleanText(html.replace(/<[^>]+>/g, " "));
-  }
-
-  tagText(tag: string): string {
-    const re = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "i");
-    const m = this.html.match(re);
-    return m ? this.text(m[1]) : "";
-  }
-
-  byId(id: string): HtmlDoc {
-    const re = new RegExp(`id=["']${id}["']`, "i");
-    const idMatch = this.html.match(re);
-    if (!idMatch) return new HtmlDoc("");
-    const start = this.html.lastIndexOf("<", idMatch.index!);
-    const tagMatch = this.html.slice(start).match(/^<(\w+)/);
-    if (!tagMatch) return new HtmlDoc(this.html.slice(start));
-    const tag = tagMatch[1];
-    const blocks = this.blocks(tag, this.html.slice(start));
-    return new HtmlDoc(blocks[0] ?? "");
-  }
-
-  hrefs(): string[] {
-    return this.attrs("a", "href").filter(Boolean);
-  }
-
-  contains(text: string): boolean {
-    return this.html.includes(text);
-  }
+interface SeriesItem {
+  id: string;
+  title: string;
+  url: string;
+  poster: string;
+  year: string;
+  censored: boolean;
 }
 
-// ─── Parsers ──────────────────────────────────────────────────────────────────
-
-export function parseSlider(doc: HtmlDoc): SliderItem[] {
-  const sliderHtml = doc.byId("slider-movies-tvshows");
-  return sliderHtml.articles().map((art) => {
-    const id = art.attr("article", "id");
-    const href = art.attr("a", "href");
-    const title = art.tagText("h3") || art.attr("img", "alt");
-    const backdropRaw = art.attr("img", "data-src");
-    const year = art.tagText("span");
-    return {
-      id: id.replace("post-", ""),
-      title: cleanText(title),
-      url: resolveUrl(href),
-      backdrop: normalizeThumbnail(backdropRaw),
-      year: cleanText(year),
-    };
-  });
+interface PaginationInfo {
+  currentPage: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+  nextPage: number | null;
+  prevPage: number | null;
 }
 
-export function parseEpisodes(doc: HtmlDoc): EpisodeItem[] {
-  const re = /class="animation-2 items full">([\s\S]*?)<header/i;
-  const m = doc.html.match(re);
-  if (!m) return [];
-  const section = new HtmlDoc(m[1]);
-  return section.articles().map((art) => {
-    const id = art.attr("article", "id").replace("post-", "");
-    const href = art.attr("a", "href");
-    const seriesEl = art.tagText("span");
-    const episodeEl = art.tagText("h3");
-    const imgSrc = art.attr("img", "data-src");
-    const subMatch = art.html.match(/>(SUB|DUB)<\/span>/i);
-    const subType = subMatch ? subMatch[1].toUpperCase() : "SUB";
-    const censored = art.html.includes("buttoncensured");
-    const viewMatch = art.html.match(/fa-eye[^>]*>.*?([\d.,]+[km]?)\s*</i);
-    const views = viewMatch ? parseViewCount(viewMatch[1]) : 0;
-    const timeMatch = art.html.match(/fa-clock[^>]*>.*?<\/i>\s*([^<]+)</i);
-    const uploadedAtRaw = timeMatch ? cleanText(timeMatch[1]) : "";
-    const uploadedAt = parseRelativeTime(uploadedAtRaw);
-    return {
-      id,
-      title: `${cleanText(seriesEl)} - ${cleanText(episodeEl)}`,
-      series: cleanText(seriesEl),
-      episode: cleanText(episodeEl),
-      url: resolveUrl(href),
-      thumbnail: normalizeThumbnail(imgSrc),
-      subType,
-      censored,
-      views,
-      uploadedAt,
-      uploadedAtRaw,
-    };
-  });
-}
+/**
+ * Extract only the main content articles from the page HTML,
+ * scoped to <div class="items full"> to avoid sidebar w_item_b articles.
+ */
+function parseArticles(html: string): SeriesItem[] {
+  // Scope to <div class="items full">...</div> block only
+  const itemsBlockMatch = html.match(
+    /<div class="items full">([\s\S]*?)<\/div>\s*<div class="pagination/
+  );
+  const itemsHtml = itemsBlockMatch ? itemsBlockMatch[1] : html;
 
-export function parseSeriesSection(sectionHtml: string, sectionId: string): SeriesItem[] {
-  const startRe = new RegExp(`id="${sectionId}"`, "i");
-  const idx = sectionHtml.search(startRe);
-  if (idx === -1) return [];
-  const fromHere = sectionHtml.slice(idx);
-  const doc = new HtmlDoc(fromHere);
-  return doc.articles().map((art) => {
-    const id = art.attr("article", "id").replace("post-", "");
-    const href = art.attr("a", "href");
-    const title = art.tagText("h3") || art.attr("img", "alt");
-    const poster = art.attr("img", "data-src");
-    const yearMatch = art.html.match(/buttonyear[^>]*>.*?(\d{4})/s);
+  const articleRegex = /<article\s[^>]*class="item tvshows"[\s\S]*?<\/article>/gi;
+  const articleBlocks = itemsHtml.match(articleRegex) ?? [];
+
+  return articleBlocks.map((art) => {
+    const idMatch = art.match(/id="post-(\d+)"/);
+    const id = idMatch ? idMatch[1] : "";
+
+    const hrefMatch = art.match(/href="(https?:\/\/[^"]+\/series\/[^"]+)"/);
+    const url = hrefMatch ? hrefMatch[1] : "";
+
+    const titleMatch = art.match(/<h3[^>]*>[\s\S]*?<a[^>]*>([^<]+)<\/a>/i);
+    const rawTitle = titleMatch ? titleMatch[1] : "";
+    const title = decodeHtmlEntities(rawTitle.trim());
+
+    const posterMatch = art.match(/data-src="([^"]+poster[^"]+)"/);
+    const poster = posterMatch ? posterMatch[1] : "";
+
+    // Year is inside: <div class="buttonyear"><span style="margin:5px">2023</span>
+    const yearMatch = art.match(
+      /class="buttonyear"[^>]*>[\s\S]*?<span[^>]*>\s*(\d{4})\s*<\/span>/i
+    );
     const year = yearMatch ? yearMatch[1] : "";
-    const censored = !art.html.includes("buttonuncensured");
-    return {
-      id,
-      title: cleanText(title),
-      url: resolveUrl(href),
-      poster: normalizeThumbnail(poster),
-      year,
-      censored,
-    };
+
+    const censored = !art.includes("buttonuncensured");
+
+    return { id, title, url, poster, year, censored };
   });
 }
 
-export function parseHomeSections(doc: HtmlDoc): Record<string, SeriesItem[]> {
-  const sectionIds = [
-    { id: "dt-tvshows", name: "featured_series" },
-    { id: "genre_uncensored", name: "uncensored" },
-    { id: "genre_harem", name: "harem" },
-    { id: "genre_school-girls", name: "school_girls" },
-    { id: "genre_large-breasts", name: "large_breasts" },
-  ];
-  const result: Record<string, SeriesItem[]> = {};
-  for (const { id, name } of sectionIds) {
-    result[name] = parseSeriesSection(doc.html, id);
-  }
-  return result;
-}
-
-// ─── Scrape Functions ─────────────────────────────────────────────────────────
-
-export async function scrapeHome() {
-  const html = await fetchPage("/");
-  const doc = new HtmlDoc(html);
+/**
+ * Extract pagination from "Page X of Y" text.
+ */
+function parsePagination(html: string, fallbackPage: number): PaginationInfo {
+  const pageMatch = html.match(/Page\s+(\d+)\s+of\s+(\d+)/i);
+  const currentPage = pageMatch ? parseInt(pageMatch[1], 10) : fallbackPage;
+  const totalPages = pageMatch ? parseInt(pageMatch[2], 10) : 1;
   return {
-    slider: parseSlider(doc),
-    recentEpisodes: parseEpisodes(doc),
-    sections: parseHomeSections(doc),
+    currentPage,
+    totalPages,
+    hasNext: currentPage < totalPages,
+    hasPrev: currentPage > 1,
+    nextPage: currentPage < totalPages ? currentPage + 1 : null,
+    prevPage: currentPage > 1 ? currentPage - 1 : null,
   };
 }
 
-export async function scrapeSeries(slug: string) {
-  const html = await fetchPage(`/series/${slug}/`);
-  const doc = new HtmlDoc(html);
-  const title = cleanText(doc.tagText("h1") || doc.tagText("h2"));
-  const descMatch = html.match(/<div[^>]*class="[^"]*wp-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-  const description = descMatch ? doc.text(descMatch[1]) : "";
-  const posterMatch = html.match(/class="[^"]*poster[^"]*"[\s\S]*?data-src="([^"]+)"/i);
-  const poster = posterMatch ? normalizeThumbnail(posterMatch[1]) : "";
-  const epSection = new HtmlDoc(html);
-  const episodes = epSection.articles()
-    .filter((a) => a.html.includes("episode") || a.html.includes("Episode"))
-    .map((art) => ({
-      title: cleanText(art.tagText("h3")),
-      url: resolveUrl(art.attr("a", "href")),
-      thumbnail: normalizeThumbnail(art.attr("img", "data-src")),
-    }));
-  return { title, description, poster, episodes };
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#8211;/g, "–")
+    .replace(/&#8212;/g, "—")
+    .replace(/&#8230;/g, "…")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
 }
 
-export async function scrapeGenre(genre: string, page = 1) {
-  const path = page > 1 ? `/genre/${genre}/page/${page}/` : `/genre/${genre}/`;
+// ─── Home ─────────────────────────────────────────────────────────────────────
+
+export async function scrapeHome() {
+  const html = await fetchPage("/");
+
+  // Featured slider items
+  const featuredRegex = /<article\s[^>]*class="item tvshows"[\s\S]*?<\/article>/gi;
+  const featuredHtml = (() => {
+    const m = html.match(/<div[^>]+id="featured-titles"[^>]*>([\s\S]*?)<\/div>/);
+    return m ? m[1] : html;
+  })();
+  const featured = (featuredHtml.match(featuredRegex) ?? []).map((art) => {
+    const idMatch = art.match(/id="post-(\d+)"/);
+    const hrefMatch = art.match(/href="(https?:\/\/[^"]+\/series\/[^"]+)"/);
+    const titleMatch = art.match(/<h3[^>]*>[\s\S]*?<a[^>]*>([^<]+)<\/a>/i);
+    const posterMatch = art.match(/data-src="([^"]+poster[^"]+)"/);
+    const yearMatch = art.match(/class="buttonyear"[^>]*>[\s\S]*?<span[^>]*>\s*(\d{4})\s*<\/span>/i);
+    return {
+      id: idMatch ? idMatch[1] : "",
+      title: decodeHtmlEntities((titleMatch ? titleMatch[1] : "").trim()),
+      url: hrefMatch ? hrefMatch[1] : "",
+      poster: posterMatch ? posterMatch[1] : "",
+      year: yearMatch ? yearMatch[1] : "",
+      censored: !art.includes("buttonuncensured"),
+    };
+  });
+
+  // Latest episodes (dt-episodes section)
+  const episodesHtml = (() => {
+    const m = html.match(/<div[^>]+id="dt-episodes"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/);
+    return m ? m[1] : "";
+  })();
+  const episodeRegex = /<article[\s\S]*?<\/article>/gi;
+  const latestEpisodes = (episodesHtml.match(episodeRegex) ?? []).map((art) => {
+    const hrefMatch = art.match(/href="(https?:\/\/[^"]+\/videos\/[^"]+)"/);
+    const titleMatch = art.match(/<span[^>]+class="[^"]*title[^"]*"[^>]*>([^<]+)<\/span>/i);
+    const posterMatch = art.match(/data-src="([^"]+)"/);
+    return {
+      url: hrefMatch ? hrefMatch[1] : "",
+      title: decodeHtmlEntities((titleMatch ? titleMatch[1] : "").trim()),
+      thumbnail: posterMatch ? posterMatch[1] : "",
+    };
+  }).filter((e) => e.url);
+
+  return { featured, latestEpisodes };
+}
+
+// ─── Trending ────────────────────────────────────────────────────────────────
+
+export async function scrapeTrending(page = 1) {
+  const safePage = Math.max(1, page);
+  const path = safePage > 1 ? `/trending/page/${safePage}/` : `/trending/`;
   const html = await fetchPage(path);
-  const doc = new HtmlDoc(html);
-  const items = doc.articles().map((art) => ({
-    id: art.attr("article", "id").replace("post-", ""),
-    title: cleanText(art.tagText("h3") || art.attr("img", "alt")),
-    url: resolveUrl(art.attr("a", "href")),
-    poster: normalizeThumbnail(art.attr("img", "data-src")),
-    year: (art.html.match(/buttonyear[^>]*>.*?(\d{4})/s) ?? [])[1] ?? "",
-  }));
-  return { genre, page, items };
+  const items = parseArticles(html);
+  const pagination = parsePagination(html, safePage);
+  return { items, pagination };
 }
 
-export async function scrapeSearch(query: string, page = 1) {
-  const params = new URLSearchParams({ s: query });
-  const path = page > 1 ? `/page/${page}/?${params}` : `/?${params}`;
-  const html = await fetchPage(path);
-  const doc = new HtmlDoc(html);
-  const results = doc.articles().map((art) => ({
-    id: art.attr("article", "id").replace("post-", ""),
-    title: cleanText(art.tagText("h3") || art.attr("img", "alt")),
-    url: resolveUrl(art.attr("a", "href")),
-    poster: normalizeThumbnail(art.attr("img", "data-src")),
-  }));
-  return { query, page, results };
-}
-
-export async function scrapeTrending() {
-  const html = await fetchPage("/trending/");
-  const doc = new HtmlDoc(html);
-  return doc.articles().map((art) => ({
-    id: art.attr("article", "id").replace("post-", ""),
-    title: cleanText(art.tagText("h3") || art.attr("img", "alt")),
-    url: resolveUrl(art.attr("a", "href")),
-    poster: normalizeThumbnail(art.attr("img", "data-src")),
-    year: (art.html.match(/buttonyear[^>]*>.*?(\d{4})/s) ?? [])[1] ?? "",
-  }));
-}
+// ─── Genre list ───────────────────────────────────────────────────────────────
 
 export async function scrapeGenreList() {
-  const html = await fetchPage("/");
-  const navMatch = html.match(/<ul[^>]*class="sub-menu"[^>]*>([\s\S]*?)<\/ul>/i);
-  if (!navMatch) return [];
-  const doc = new HtmlDoc(navMatch[1]);
-  const links = doc.hrefs();
-  const titles = doc.attrs("a", "title");
-  const texts = navMatch[1].match(/<a[^>]*>([^<]+)<\/a>/gi) ?? [];
-  return links.map((href, i) => ({
-    name: cleanText(texts[i]?.replace(/<[^>]+>/g, "") ?? ""),
-    title: cleanText(titles[i] ?? ""),
-    slug: href.replace(/.*\/genre\//, "").replace(/\/$/, ""),
-    url: resolveUrl(href),
+  const html = await fetchPage("/series/");
+  const genreRegex = /<li class="cat-item[^"]*"><a href="(https?:\/\/[^"]+\/genre\/([^/]+)\/[^"]*)"[^>]*>([^<]+)<\/a>\s*(?:<i>(\d+)<\/i>)?/gi;
+  const genres: Array<{ name: string; slug: string; url: string; count: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = genreRegex.exec(html)) !== null) {
+    genres.push({
+      url: m[1],
+      slug: m[2],
+      name: decodeHtmlEntities(m[3].trim()),
+      count: m[4] ? parseInt(m[4], 10) : 0,
+    });
+  }
+  return genres;
+}
+
+// ─── Genre page ───────────────────────────────────────────────────────────────
+
+export async function scrapeGenre(slug: string, page = 1) {
+  const safePage = Math.max(1, page);
+  // URL pattern: /genre/yuri/  or  /genre/yuri/page/2/
+  const path = safePage > 1 ? `/genre/${slug}/page/${safePage}/` : `/genre/${slug}/`;
+  const html = await fetchPage(path);
+
+  // Extract genre name from <h1 class="heading-archive">
+  const nameMatch = html.match(/<h1[^>]*class="[^"]*heading-archive[^"]*"[^>]*>([^<]+)<\/h1>/i);
+  const name = nameMatch ? decodeHtmlEntities(nameMatch[1].trim()) : slug;
+
+  const items = parseArticles(html);
+  const pagination = parsePagination(html, safePage);
+
+  return { name, slug, items, pagination };
+}
+
+// ─── Series detail ────────────────────────────────────────────────────────────
+
+export async function scrapeSeries(slug: string) {
+  const html = await fetchPage(`/series/${slug}/`);
+
+  // Title
+  const titleMatch = html.match(/<h1[^>]*class="[^"]*sheader[^"]*"[^>]*>([\s\S]*?)<\/h1>/i)
+    || html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const title = titleMatch ? decodeHtmlEntities(titleMatch[1].replace(/<[^>]+>/g, "").trim()) : slug;
+
+  // Poster
+  const posterMatch = html.match(/<div[^>]+class="[^"]*poster[^"]*"[^>]*>[\s\S]*?data-src="([^"]+)"/i)
+    || html.match(/class="[^"]*main-poster[^"]*"[\s\S]*?data-src="([^"]+)"/i);
+  const poster = posterMatch ? posterMatch[1] : "";
+
+  // Description
+  const descMatch = html.match(/<div[^>]+class="[^"]*wp-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+  const description = descMatch
+    ? decodeHtmlEntities(descMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+    : "";
+
+  // Genres
+  const genreMatches = html.matchAll(/<a[^>]+href="[^"]+\/genre\/([^/]+)\/[^"]*"[^>]*>([^<]+)<\/a>/gi);
+  const genres = [...genreMatches].map((m) => ({
+    slug: m[1],
+    name: decodeHtmlEntities(m[2].trim()),
   }));
+
+  // Year from meta or buttonyear
+  const yearMatch = html.match(/class="buttonyear"[^>]*>[\s\S]*?<span[^>]*>\s*(\d{4})\s*<\/span>/i)
+    || html.match(/<span[^>]+class="[^"]*year[^"]*"[^>]*>(\d{4})<\/span>/i);
+  const year = yearMatch ? yearMatch[1] : "";
+
+  // Censored
+  const censored = !html.includes("buttonuncensured");
+
+  // Episodes
+  const episodeRegex = /<li[^>]*class="[^"]*episodio[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+  const episodes: Array<{ number: string; title: string; url: string; date: string }> = [];
+  let em: RegExpExecArray | null;
+  while ((em = episodeRegex.exec(html)) !== null) {
+    const epHref = em[1].match(/href="([^"]+)"/);
+    const epTitle = em[1].match(/<a[^>]*>([^<]+)<\/a>/);
+    const epNum = em[1].match(/numerando[^>]*>([^<]+)</);
+    const epDate = em[1].match(/fecha[^>]*>([^<]+)</);
+    if (epHref) {
+      episodes.push({
+        number: epNum ? epNum[1].trim() : "",
+        title: epTitle ? decodeHtmlEntities(epTitle[1].trim()) : "",
+        url: epHref[1],
+        date: epDate ? epDate[1].trim() : "",
+      });
+    }
+  }
+
+  return { title, slug, poster, description, year, censored, genres, episodes };
+}
+
+// ─── Search ───────────────────────────────────────────────────────────────────
+
+export async function scrapeSearch(query: string, page = 1) {
+  const safePage = Math.max(1, page);
+  const encoded = encodeURIComponent(query);
+  const path = safePage > 1
+    ? `/?s=${encoded}&page=${safePage}`
+    : `/?s=${encoded}`;
+  const html = await fetchPage(path);
+  const items = parseArticles(html);
+  const pagination = parsePagination(html, safePage);
+  return { query, items, pagination };
 }
