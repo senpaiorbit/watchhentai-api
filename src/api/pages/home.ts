@@ -23,13 +23,7 @@ home.get("/", async (c) => {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    return c.json(
-      {
-        success: false,
-        error: message,
-      },
-      500
-    );
+    return c.json({ success: false, error: message }, 500);
   }
 });
 
