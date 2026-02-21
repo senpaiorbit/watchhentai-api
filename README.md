@@ -2,8 +2,6 @@
   <img src="https://watchhentai.net/logo.svg" alt="WatchHentai Logo" width="200"/>
 </p>
 
-# WatchHentai.net Scraper API  
-  
 A zero-dependency REST API built with **Hono** on **Vercel Edge Runtime** that scrapes [watchhentai.net](https://watchhentai.net) and returns clean, structured JSON.  
   
 ---
