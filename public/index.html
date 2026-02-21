@@ -9,88 +9,76 @@
 </head>
 <body data-page="index">
 
-  <!-- Navbar: JS fills this from /api/extra -->
-  <nav id="mainNav" style="position:sticky;top:0;z-index:500;background:rgba(5,7,15,.88);backdrop-filter:blur(24px);border-bottom:1px solid rgba(255,255,255,.06)">
-    <div class="nav-inner">
+  <!-- Navbar injected by JS (/api/extra) -->
+  <nav id="mainNav" style="position:sticky;top:0;z-index:500;background:rgba(5,7,15,.92);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,.06)">
+    <div class="nav-in">
       <a href="index.html" class="nav-logo">Watch<em>Hentai</em></a>
-      <div style="margin-left:auto;display:flex;align-items:center"><div class="spin spin-sm"></div></div>
+      <div style="margin-left:auto;display:flex;align-items:center">
+        <div class="spin spin-sm"></div>
+      </div>
     </div>
   </nav>
 
-  <!-- ── HERO SLIDER ─────────────────────────────── -->
-  <section id="heroSec" style="background:var(--bg1)">
-    <div id="heroSlider">
-      <div style="min-height:520px;display:flex;align-items:center;justify-content:center">
+  <!-- Hero (featured slider OR fallback banner) -->
+  <section id="heroSec">
+    <div id="heroSlider" style="min-height:80px;background:var(--bg1)">
+      <div style="min-height:500px;display:flex;align-items:center;justify-content:center">
         <div class="spin"></div>
       </div>
     </div>
   </section>
 
-  <!-- ── HOME GRIDS ──────────────────────────────── -->
+  <!-- Home grids: New Episodes + Trending -->
   <div id="homeSecs">
     <section class="home-sec">
-      <div class="home-sec-inner">
-        <div class="section-hd">
-          <div class="section-hd-left">
-            <span class="section-eyebrow">Fresh Content</span>
-            <h2 class="section-title">New Episodes</h2>
+      <div class="wrap">
+        <div class="sec-hd">
+          <div class="sec-hd-l">
+            <span class="eyebrow">Fresh Content</span>
+            <h2 class="sec-title">New Episodes</h2>
           </div>
           <a href="index.html?type=videos" class="view-more">View All →</a>
         </div>
-        <div class="grid ep" id="newEpGrid">
-          <!-- JS fills -->
-        </div>
+        <div class="grid ep" id="newEpGrid"></div>
       </div>
     </section>
-
-    <section class="home-sec shaded">
-      <div class="home-sec-inner">
-        <div class="section-hd">
-          <div class="section-hd-left">
-            <span class="section-eyebrow">Popular Now</span>
-            <h2 class="section-title">Trending Series</h2>
+    <section class="home-sec alt">
+      <div class="wrap">
+        <div class="sec-hd">
+          <div class="sec-hd-l">
+            <span class="eyebrow">Popular Now</span>
+            <h2 class="sec-title">Trending Series</h2>
           </div>
           <a href="index.html?type=trending" class="view-more">View All →</a>
         </div>
-        <div class="grid" id="trendGrid">
-          <!-- JS fills -->
-        </div>
+        <div class="grid" id="trendGrid"></div>
       </div>
     </section>
   </div>
 
-  <!-- ── LIST SECTION (trending / videos / series) ── -->
+  <!-- List section (trending / videos / series) -->
   <div id="listSec" class="hidden">
-    <div class="page-bar">
-      <div class="wrap page-bar-inner">
-        <h1 id="listTitle">Series</h1>
-      </div>
-    </div>
+    <div class="page-bar"><div class="wrap"><h1 id="listTitle">Series</h1></div></div>
     <div class="wrap" style="padding-top:1.75rem">
       <div class="grid lg" id="listGrid"></div>
       <div id="listPag"></div>
     </div>
   </div>
 
-  <!-- ── CALENDAR ─────────────────────────────────── -->
+  <!-- Calendar -->
   <div id="calSec" class="hidden">
     <div class="page-bar">
-      <div class="wrap page-bar-inner">
-        <h1>Release Calendar</h1>
-        <p>Upcoming and recent episode schedule</p>
-      </div>
+      <div class="wrap"><h1>Release Calendar</h1><p>Upcoming and recent episode schedule</p></div>
     </div>
     <div class="wrap" style="padding-top:1.75rem" id="calContent">
       <div class="spin"></div>
     </div>
   </div>
 
-  <!-- ── SEARCH RESULTS ───────────────────────────── -->
+  <!-- Search results -->
   <div id="searchSec" class="hidden">
     <div class="page-bar">
-      <div class="wrap page-bar-inner">
-        <h2 class="search-ttl" id="searchTitle">Search Results</h2>
-      </div>
+      <div class="wrap"><h2 id="searchTitle" style="font-family:var(--fd);font-size:clamp(1.4rem,3vw,2rem);font-weight:700">Search Results</h2></div>
     </div>
     <div class="wrap" style="padding-top:1.75rem">
       <div class="grid lg" id="searchGrid"></div>
@@ -98,11 +86,11 @@
     </div>
   </div>
 
-  <!-- ── FOOTER ────────────────────────────────────── -->
+  <!-- Footer -->
   <footer class="site-footer" id="siteFooter">
-    <div class="footer-inner">
-      <div class="footer-brand">Watch<em>Hentai</em></div>
-      <p class="footer-copy">WatchHentai.net © 2025 — All content belongs to their respective owners.</p>
+    <div class="ft-in">
+      <div class="ft-brand">Watch<em>Hentai</em></div>
+      <p class="ft-copy">WatchHentai.net © 2025 — All content belongs to their respective owners.</p>
     </div>
   </footer>
 
