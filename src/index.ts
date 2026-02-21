@@ -8,6 +8,7 @@ import genre from "./api/pages/genre";
 import videos from "./api/pages/videos";
 import uncensored from "./api/pages/uncensored";
 import release from "./api/pages/release";
+import calendar from "./api/pages/calendar";
 import { scrapeGenreList, scrapeSearch, scrapeSeries } from "./lib/scraper";
 
 const app = new Hono().basePath("/api");
@@ -43,6 +44,10 @@ app.route("/uncensored", uncensored);
 // GET /api/release/:year?page=N
 // GET /api/release/:year/:page
 app.route("/release", release);
+
+// ─── Calendar ─────────────────────────────────────────────────────────────────
+// GET /api/calendar
+app.route("/calendar", calendar);
 
 // ─── Genres ───────────────────────────────────────────────────────────────────
 // GET /api/genres
@@ -108,6 +113,7 @@ app.notFound((c) =>
         "GET /api/uncensored",
         "GET /api/uncensored?page=N",
         "GET /api/uncensored/:page",
+        "GET /api/calendar",
         "GET /api/release/:year",
         "GET /api/release/:year?page=N",
         "GET /api/release/:year/:page",
