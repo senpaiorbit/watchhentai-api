@@ -1,28 +1,5 @@
-<p align="center">
-  <a href="https://github.com/Lishan778/hanime-api">
-    <img src="images/image1.png" alt="Logo" width="85" height="85">
-  </a>
+# WatchHentai.net Scraper API
 
-  <h3 align="center">Hanime API</h3>
-
-  <p align="center">
-    <samp>A hentai streaming API 👀</samp>
-    <br />
-    <a href="#routes"><strong>Explore the api »</strong></a>
-    <br />
-  </p>
-  <p align="center">
-    <a href="https://github.com/Lishan778/hanime-api/actions/workflows/docker-image.yml">
-      <img src="https://github.com/Lishan778/hanime-api/actions/workflows/docker-image.yml/badge.svg" alt="stars">
-    </a>
-    <a href="https://github.com/Lishan778/hanime-api">
-      <img src="https://img.shields.io/github/stars/Lishan778/hanime-api" alt="stars">
-    </a>
-    <a href="https://discord.gg/KyKye8TXsJ">
-      <img src="https://img.shields.io/discord/961164998363738133?color=7289da&label=discord&logo=discord&logoColor=7289da" alt="Discord">
-    </a>
-  </p>
-</p>
 A zero-dependency REST API built with **Hono** on **Vercel Edge Runtime** that scrapes [watchhentai.net](https://watchhentai.net) and returns clean, structured JSON.
 
 ---
