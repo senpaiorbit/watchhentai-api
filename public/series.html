@@ -4,28 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Series — WatchHentai</title>
-  <meta name="description" content="Hentai series details, full episode list, related series and more.">
+  <meta name="description" content="Full series details, episodes, and related content.">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body data-page="series">
 
-  <!-- ── Navbar (filled by JS via /api/extra) ── -->
-  <nav class="navbar" id="mainNav">
-    <div class="navbar-inner">
-      <a href="index.html" class="navbar-brand">Watch<span>Hentai</span></a>
-      <div style="margin-left:auto"><div class="spinner-sm spinner" style="width:24px;height:24px;margin:0"></div></div>
+  <!-- Navbar -->
+  <nav id="mainNav" style="position:sticky;top:0;z-index:500;background:rgba(5,7,15,.88);backdrop-filter:blur(24px);border-bottom:1px solid rgba(255,255,255,.06)">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo">Watch<em>Hentai</em></a>
+      <div style="margin-left:auto"><div class="spin spin-sm"></div></div>
     </div>
   </nav>
 
-  <!-- ── Series Content (fully injected by JS) ── -->
+  <!-- Series content fully injected by JS -->
   <div id="seriesContent">
-    <div class="spinner"></div>
+    <div class="spin"></div>
   </div>
 
-  <!-- ── Footer ── -->
+  <!-- Footer -->
   <footer class="site-footer" id="siteFooter">
-    <div class="container">
-      <p>WatchHentai.net © 2025 — All content belongs to their respective owners.</p>
+    <div class="footer-inner">
+      <div class="footer-brand">Watch<em>Hentai</em></div>
+      <p class="footer-copy">WatchHentai.net © 2025 — All content belongs to their respective owners.</p>
     </div>
   </footer>
 
