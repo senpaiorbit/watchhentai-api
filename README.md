@@ -1,5 +1,17 @@
 # WatchHentai.net Scraper API
+<p align="center">
+  <a href="https://github.com/Lishan778/hanime-api">
+    <img src="images/image1.png" alt="Logo" width="85" height="85">
+  </a>
 
+  <h3 align="center">Hanime API</h3>
+
+  <p align="center">
+    <samp>A hentai streaming API 👀</samp>
+    <br />
+    <a href="#routes"><strong>Explore the api »</strong></a>
+    <br />
+  </p>
 A zero-dependency REST API built with **Hono** on **Vercel Edge Runtime** that scrapes [watchhentai.net](https://watchhentai.net) and returns clean, structured JSON.
 
 ---
