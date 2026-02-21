@@ -4,92 +4,105 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WatchHentai — Home</title>
-  <meta name="description" content="Watch hentai series and episodes online in HD quality. Browse trending, new episodes, and more.">
+  <meta name="description" content="Watch hentai series and episodes online in HD quality.">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body data-page="index">
 
-  <!-- ── Navbar (filled by JS via /api/extra) ── -->
-  <nav class="navbar" id="mainNav">
-    <div class="navbar-inner">
-      <a href="index.html" class="navbar-brand">Watch<span>Hentai</span></a>
-      <div style="margin-left:auto"><div class="spinner-sm spinner" style="width:24px;height:24px;margin:0"></div></div>
+  <!-- Navbar: JS fills this from /api/extra -->
+  <nav id="mainNav" style="position:sticky;top:0;z-index:500;background:rgba(5,7,15,.88);backdrop-filter:blur(24px);border-bottom:1px solid rgba(255,255,255,.06)">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo">Watch<em>Hentai</em></a>
+      <div style="margin-left:auto;display:flex;align-items:center"><div class="spin spin-sm"></div></div>
     </div>
   </nav>
 
-  <!-- ── Featured Slider (home only) ── -->
-  <section class="featured-section" id="heroSection">
-    <div id="featuredSlider">
-      <div style="min-height:480px;display:flex;align-items:center;justify-content:center;">
-        <div class="spinner"></div>
+  <!-- ── HERO SLIDER ─────────────────────────────── -->
+  <section id="heroSec" style="background:var(--bg1)">
+    <div id="heroSlider">
+      <div style="min-height:520px;display:flex;align-items:center;justify-content:center">
+        <div class="spin"></div>
       </div>
     </div>
   </section>
 
-  <!-- ── Home Grid Sections ── -->
-  <div id="homeSections">
-    <section class="home-section">
-      <div class="container">
-        <div class="section-header">
-          <h2 class="section-title">New Episodes</h2>
-          <a href="index.html?type=videos" class="view-all">View All →</a>
+  <!-- ── HOME GRIDS ──────────────────────────────── -->
+  <div id="homeSecs">
+    <section class="home-sec">
+      <div class="home-sec-inner">
+        <div class="section-hd">
+          <div class="section-hd-left">
+            <span class="section-eyebrow">Fresh Content</span>
+            <h2 class="section-title">New Episodes</h2>
+          </div>
+          <a href="index.html?type=videos" class="view-more">View All →</a>
         </div>
-        <div class="cards-grid" id="newEpGrid">
-          <!-- filled by JS -->
+        <div class="grid ep" id="newEpGrid">
+          <!-- JS fills -->
         </div>
       </div>
     </section>
 
-    <section class="home-section alt">
-      <div class="container">
-        <div class="section-header">
-          <h2 class="section-title">Trending Series</h2>
-          <a href="index.html?type=trending" class="view-all">View All →</a>
+    <section class="home-sec shaded">
+      <div class="home-sec-inner">
+        <div class="section-hd">
+          <div class="section-hd-left">
+            <span class="section-eyebrow">Popular Now</span>
+            <h2 class="section-title">Trending Series</h2>
+          </div>
+          <a href="index.html?type=trending" class="view-more">View All →</a>
         </div>
-        <div class="cards-grid" id="trendGrid">
-          <!-- filled by JS -->
+        <div class="grid" id="trendGrid">
+          <!-- JS fills -->
         </div>
       </div>
     </section>
   </div>
 
-  <!-- ── List Section (trending / videos / series) ── -->
-  <section class="d-none" id="listSection">
-    <div class="page-hero">
-      <div class="container">
+  <!-- ── LIST SECTION (trending / videos / series) ── -->
+  <div id="listSec" class="hidden">
+    <div class="page-bar">
+      <div class="wrap page-bar-inner">
         <h1 id="listTitle">Series</h1>
       </div>
     </div>
-    <div class="container" style="padding-top:1.5rem">
-      <div class="cards-grid" id="listGrid"></div>
-      <div id="listPagination"></div>
+    <div class="wrap" style="padding-top:1.75rem">
+      <div class="grid lg" id="listGrid"></div>
+      <div id="listPag"></div>
     </div>
-  </section>
+  </div>
 
-  <!-- ── Calendar Section ── -->
-  <section class="d-none" id="calendarSection">
-    <div class="page-hero">
-      <div class="container">
+  <!-- ── CALENDAR ─────────────────────────────────── -->
+  <div id="calSec" class="hidden">
+    <div class="page-bar">
+      <div class="wrap page-bar-inner">
         <h1>Release Calendar</h1>
         <p>Upcoming and recent episode schedule</p>
       </div>
     </div>
-    <div class="container" style="padding-top:1.5rem" id="calendarContent">
-      <div class="spinner"></div>
+    <div class="wrap" style="padding-top:1.75rem" id="calContent">
+      <div class="spin"></div>
     </div>
-  </section>
+  </div>
 
-  <!-- ── Search Results ── -->
-  <section class="search-section container d-none" id="searchSection">
-    <h2 class="search-heading" id="searchTitle">Search Results</h2>
-    <div class="cards-grid" id="searchGrid"></div>
-    <div id="searchPag"></div>
-  </section>
+  <!-- ── SEARCH RESULTS ───────────────────────────── -->
+  <div id="searchSec" class="hidden">
+    <div class="page-bar">
+      <div class="wrap page-bar-inner">
+        <h2 class="search-ttl" id="searchTitle">Search Results</h2>
+      </div>
+    </div>
+    <div class="wrap" style="padding-top:1.75rem">
+      <div class="grid lg" id="searchGrid"></div>
+      <div id="searchPag"></div>
+    </div>
+  </div>
 
-  <!-- ── Footer ── -->
+  <!-- ── FOOTER ────────────────────────────────────── -->
   <footer class="site-footer" id="siteFooter">
-    <div class="container">
-      <p>WatchHentai.net © 2025 — All content belongs to their respective owners.</p>
+    <div class="footer-inner">
+      <div class="footer-brand">Watch<em>Hentai</em></div>
+      <p class="footer-copy">WatchHentai.net © 2025 — All content belongs to their respective owners.</p>
     </div>
   </footer>
 
