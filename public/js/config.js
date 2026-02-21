@@ -1,5 +1,4 @@
-// WatchHentai — API Configuration
-// This file must be loaded BEFORE script.js
+// WatchHentai — API Config (loaded FIRST, sets global)
 window.CONFIG = {
   API: "https://watchhentai-api.vercel.app/api"
 };
