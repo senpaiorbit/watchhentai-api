@@ -13,6 +13,7 @@ import search from "./api/pages/search";
 import series from "./api/pages/series";
 import watch from "./api/pages/watch";
 import download from "./api/pages/download";
+import extra from "./api/pages/extra";
 import { scrapeGenreList } from "./lib/scraper";
 
 const app = new Hono().basePath("/api");
@@ -92,6 +93,10 @@ app.route("/watch", watch);
 // GET /api/download/seikou-senki-pony-celes-episode-1-id-01
 app.route("/download", download);
 
+// ─── Extra (site-wide metadata) ───────────────────────────────────────────────
+// GET /api/extra  → logo, menu, genres, years, popular, new, footer
+app.route("/extra", extra);
+
 // ─── Health ───────────────────────────────────────────────────────────────────
 app.get("/health", (c) =>
   c.json({ success: true, status: "ok", timestamp: new Date().toISOString() })
@@ -132,6 +137,7 @@ app.notFound((c) =>
         "GET /api/watch/:slug",
         "GET /api/download?slug=episode-slug",
         "GET /api/download/:slug",
+        "GET /api/extra",
         "GET /api/search?q=:query&page=1",
         "GET /api/health",
       ],
