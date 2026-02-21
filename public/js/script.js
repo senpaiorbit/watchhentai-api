@@ -1,232 +1,193 @@
 /*  WatchHentai — script.js
-    ▸ No top-level execution — everything runs inside DOMContentLoaded
-    ▸ No ES modules, no import/export
-    ▸ Navbar built dynamically from /api/extra
-    ▸ Works on: index.html  genre.html  series.html  watch.html
+    Everything inside DOMContentLoaded — zero top-level execution
+    No ES modules. Plain var/function only.
+    Navbar/footer from /api/extra. Hero fallback if featured=[].
 */
-
 document.addEventListener('DOMContentLoaded', function () {
 
-  /* ── Config ─────────────────────────────────────────────── */
-  var API = window.CONFIG ? window.CONFIG.API : 'https://watchhentai-api.vercel.app/api';
+  var API  = (window.CONFIG && window.CONFIG.API) ? window.CONFIG.API : 'https://watchhentai-api.vercel.app/api';
   var PAGE = document.body.getAttribute('data-page') || '';
 
-  /* ══════════════════════════════════════════════════════════
-     UTILITIES
-  ══════════════════════════════════════════════════════════ */
-
+  /* ─── Core helpers ─────────────────────────────── */
   function apiFetch(path) {
     return fetch(API + path)
-      .then(function (r) {
+      .then(function(r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
       })
-      .then(function (j) {
+      .then(function(j) {
         if (!j.success) throw new Error(j.error || 'API error');
         return j.data;
       });
   }
 
-  function qs(sel, root) { return (root || document).querySelector(sel); }
-  function qsa(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+  function $  (sel, ctx) { return (ctx || document).querySelector(sel); }
+  function $$ (sel, ctx) { return Array.prototype.slice.call((ctx || document).querySelectorAll(sel)); }
 
-  function params() {
+  function P() {
     var p = {};
-    new URLSearchParams(window.location.search).forEach(function (v, k) { p[k] = v; });
+    new URLSearchParams(window.location.search).forEach(function(v,k){ p[k]=v; });
     return p;
   }
 
-  function slugFrom(url) {
+  function slug(url) {
     if (!url) return '';
     return url.replace(/\/$/, '').split('/').pop();
   }
 
-  function esc(s) {
+  function x(s) {
     if (s == null) return '';
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  function show(id) {
-    var el = document.getElementById(id);
-    if (el) el.classList.remove('hidden');
-  }
-  function hide(id) {
-    var el = document.getElementById(id);
-    if (el) el.classList.add('hidden');
-  }
+  function show(id){ var e=document.getElementById(id); if(e) e.classList.remove('hidden'); }
+  function hide(id){ var e=document.getElementById(id); if(e) e.classList.add('hidden');    }
+  function hideAll(arr){ arr.forEach(hide); }
 
   function toast(msg, type) {
     var t = document.createElement('div');
-    t.className = 'toast ' + (type === 'ok' ? 'ok' : 'err');
+    t.className = 'toast '+(type==='ok'?'ok':'err');
     t.textContent = msg;
     document.body.appendChild(t);
-    setTimeout(function () { t.classList.add('show'); }, 12);
-    setTimeout(function () {
-      t.classList.remove('show');
-      setTimeout(function () { t.remove(); }, 400);
-    }, 3400);
+    setTimeout(function(){ t.classList.add('show'); }, 15);
+    setTimeout(function(){ t.classList.remove('show'); setTimeout(function(){ t.remove(); },380); }, 3400);
   }
 
-  /* ── Skeletons ─────────────────────────────────────────── */
-  function skels(n, ratio) {
-    var ar = ratio || '2/3';
-    var h = '';
-    for (var i = 0; i < (n || 12); i++) {
-      h += '<div class="sk-card">' +
-        '<div class="sk sk-img" style="aspect-ratio:' + ar + '"></div>' +
-        '<div class="sk sk-l"></div>' +
-        '<div class="sk sk-l s"></div>' +
-        '</div>';
+  /* ─── Skeletons ────────────────────────────────── */
+  function skels(n, ar) {
+    var h='', a=ar||'2/3';
+    for(var i=0;i<(n||12);i++) {
+      h+='<div class="sk-card"><div class="sk sk-img" style="aspect-ratio:'+a+'"></div><div class="sk sk-l"></div><div class="sk sk-l s"></div></div>';
     }
     return h;
   }
+  function empty(msg){ return '<div class="empty" style="grid-column:1/-1"><span class="empty-ico">📭</span><p>'+x(msg)+'</p></div>'; }
 
-  function emptyHTML(msg) {
-    return '<div class="empty" style="grid-column:1/-1">' +
-      '<span class="empty-ico">📭</span>' +
-      '<p>' + esc(msg) + '</p>' +
-      '</div>';
-  }
+  /* ─── Cards ────────────────────────────────────── */
+  function playIco(){ return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'; }
 
-  /* ── Cards ─────────────────────────────────────────────── */
-  function seriesCard(item) {
-    var slug = slugFrom(item.url);
-    var tag = '';
-    if (item.censored === 'uncensored') tag = '<span class="card-badge cb-unc">Uncensored</span>';
-    else if (item.censored === 'censored') tag = '<span class="card-badge cb-cen">Censored</span>';
-    return '<a class="card" href="series.html?slug=' + esc(slug) + '">' +
-      '<div class="card-thumb">' +
-        '<img src="' + esc(item.poster || '') + '" alt="' + esc(item.title) + '" loading="lazy" onerror="this.src=\'https://placehold.co/300x420/0e1220/e8334a?text=No+Image\'">' +
+  function serCard(it) {
+    var s = slug(it.url);
+    var tag='';
+    if(it.censored==='uncensored') tag='<span class="cb cb-unc">Uncensored</span>';
+    else if(it.censored==='censored') tag='<span class="cb cb-cen">Censored</span>';
+    return '<a class="card" href="series.html?slug='+x(s)+'">' +
+      '<div class="c-thumb">' +
+        '<img src="'+x(it.poster||'')+'" alt="'+x(it.title)+'" loading="lazy" onerror="this.src=\'https://placehold.co/300x420/0e1220/e8334a?text=N\'">'+
         tag +
-        (item.rating ? '<span class="card-badge cb-rating">★ ' + esc(item.rating) + '</span>' : '') +
-        (item.episodes ? '<span class="card-badge cb-ep">' + esc(item.episodes) + ' EP</span>' : '') +
-        '<div class="card-play"><div class="card-play-inner">' +
-          '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>' +
-        '</div></div>' +
-      '</div>' +
-      '<div class="card-body">' +
-        '<p class="card-name">' + esc(item.title) + '</p>' +
-        '<div class="card-info">' + (item.year || '') + '</div>' +
-      '</div>' +
+        (it.rating?'<span class="cb cb-rate">★ '+x(it.rating)+'</span>':'')+
+        (it.episodes?'<span class="cb cb-ep">'+x(it.episodes)+' EP</span>':'')+
+        '<div class="c-play"><div class="c-play-ico">'+playIco()+'</div></div>'+
+      '</div>'+
+      '<div class="c-body"><p class="c-name">'+x(it.title)+'</p><div class="c-info">'+x(it.year||'')+'</div></div>'+
     '</a>';
   }
 
-  function epCard(item) {
-    var slug = slugFrom(item.url);
-    return '<a class="card ep" href="watch.html?slug=' + esc(slug) + '">' +
-      '<div class="card-thumb">' +
-        '<img src="' + esc(item.thumbnail || item.poster || '') + '" alt="' + esc(item.title) + '" loading="lazy" onerror="this.src=\'https://placehold.co/400x225/0e1220/e8334a?text=No+Image\'">' +
-        '<div class="card-play"><div class="card-play-inner">' +
-          '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>' +
-        '</div></div>' +
-      '</div>' +
-      '<div class="card-body">' +
-        '<p class="card-name">' + esc(item.title) + '</p>' +
-        '<div class="card-info">' +
-          (item.date ? '<span>' + esc(item.date) + '</span>' : '') +
-          (item.views ? '<span>👁 ' + esc(item.views) + '</span>' : '') +
-        '</div>' +
-      '</div>' +
+  function epCard(it) {
+    var s = slug(it.url);
+    return '<a class="card ep" href="watch.html?slug='+x(s)+'">' +
+      '<div class="c-thumb">' +
+        '<img src="'+x(it.thumbnail||it.poster||'')+'" alt="'+x(it.title)+'" loading="lazy" onerror="this.src=\'https://placehold.co/400x225/0e1220/e8334a?text=N\'">'+
+        '<div class="c-play"><div class="c-play-ico">'+playIco()+'</div></div>'+
+      '</div>'+
+      '<div class="c-body"><p class="c-name">'+x(it.title)+'</p>'+
+      '<div class="c-info">'+
+        (it.date?'<span>'+x(it.date)+'</span>':'')+
+        (it.views?'<span>👁 '+x(it.views)+'</span>':'')+
+      '</div></div>'+
     '</a>';
   }
 
-  function fillGrid(el, items, type, max) {
-    if (!el) return;
-    var list = max ? items.slice(0, max) : items;
-    if (!list.length) { el.innerHTML = emptyHTML('No content available.'); return; }
-    el.innerHTML = list.map(type === 'ep' ? epCard : seriesCard).join('');
+  function fill(el, items, type, max) {
+    if(!el) return;
+    var list = max ? items.slice(0,max) : items;
+    if(!list.length){ el.innerHTML=empty('No content available.'); return; }
+    el.innerHTML = list.map(type==='ep'?epCard:serCard).join('');
   }
 
-  /* ── Pagination ─────────────────────────────────────────── */
-  function pagHTML(cur, total, onPage) {
-    if (!total || total <= 1) return '';
-    var pages = [], d = 2;
-    for (var i = 1; i <= total; i++) {
-      if (i === 1 || i === total || (i >= cur - d && i <= cur + d)) pages.push(i);
-      else if (pages[pages.length - 1] !== '...') pages.push('...');
+  /* ─── Pagination ───────────────────────────────── */
+  function pagHTML(cur, total, fn) {
+    if(!total||total<=1) return '';
+    var pages=[], d=2;
+    for(var i=1;i<=total;i++){
+      if(i===1||i===total||(i>=cur-d&&i<=cur+d)) pages.push(i);
+      else if(pages[pages.length-1]!=='...') pages.push('...');
     }
-    var h = '<div class="pager" data-pager="1">';
-    h += '<button class="pg-btn"' + (cur <= 1 ? ' disabled' : '') + ' data-p="' + (cur - 1) + '">‹</button>';
-    pages.forEach(function (p) {
-      if (p === '...') h += '<span class="pg-dots">…</span>';
-      else h += '<button class="pg-btn' + (p === cur ? ' on' : '') + '" data-p="' + p + '">' + p + '</button>';
+    var h='<div class="pager">';
+    h+='<button class="pg"'+(cur<=1?' disabled':'')+' data-p="'+(cur-1)+'">‹</button>';
+    pages.forEach(function(p){
+      if(p==='...') h+='<span class="pg-dots">…</span>';
+      else h+='<button class="pg'+(p===cur?' on':'')+'" data-p="'+p+'">'+p+'</button>';
     });
-    h += '<button class="pg-btn"' + (cur >= total ? ' disabled' : '') + ' data-p="' + (cur + 1) + '">›</button>';
-    h += '</div>';
+    h+='<button class="pg"'+(cur>=total?' disabled':'')+' data-p="'+(cur+1)+'">›</button>';
+    h+='</div>';
     return h;
   }
 
-  function bindPager(container, cb) {
-    if (!container) return;
-    container.addEventListener('click', function (e) {
-      var btn = e.target.closest('.pg-btn');
-      if (btn && !btn.disabled) {
-        cb(parseInt(btn.getAttribute('data-p'), 10));
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
+  function bindPager(wrap, cb) {
+    if(!wrap) return;
+    wrap.addEventListener('click', function(e){
+      var b=e.target.closest('.pg');
+      if(b&&!b.disabled){ cb(parseInt(b.getAttribute('data-p'),10)); window.scrollTo({top:0,behavior:'smooth'}); }
     });
   }
 
-  /* ══════════════════════════════════════════════════════════
-     NAVBAR — built from /api/extra
-  ══════════════════════════════════════════════════════════ */
-
+  /* ══════════════════════════════════════════════════
+     NAVBAR — from /api/extra, fallback static
+  ══════════════════════════════════════════════════ */
   function buildNav(extra) {
-    var genres = (extra && extra.menuGenres) || [];
-    var dropItems = genres.map(function (g) {
-      return '<a class="drop-a" href="genre.html?slug=' + esc(g.slug) + '">' + esc(g.name) + '</a>';
-    }).join('');
-
-    var mobGenres = genres.map(function (g) {
-      return '<a class="mob-a" href="genre.html?slug=' + esc(g.slug) + '">' + esc(g.name) + '</a>';
-    }).join('');
-
+    var genres = (extra&&extra.menuGenres) || [];
     var navEl = document.getElementById('mainNav');
-    if (!navEl) return;
+    if(!navEl) return;
+
+    var dropItems = genres.map(function(g){
+      return '<a class="drop-a" href="genre.html?slug='+x(g.slug)+'">'+x(g.name)+'</a>';
+    }).join('');
+
+    var mobGenres = genres.map(function(g){
+      return '<a class="mob-a" href="genre.html?slug='+x(g.slug)+'">'+x(g.name)+'</a>';
+    }).join('');
+
+    var p = P();
+    function on(cond){ return cond?' on':''; }
 
     navEl.innerHTML =
-      '<div class="nav-inner">' +
+      '<div class="nav-in">' +
         '<a href="index.html" class="nav-logo">Watch<em>Hentai</em></a>' +
         '<nav class="nav-links">' +
-          '<a href="index.html" class="nav-a' + (PAGE === 'index' && !params().type ? ' on' : '') + '">Home</a>' +
-          '<a href="index.html?type=trending" class="nav-a' + (PAGE === 'index' && params().type === 'trending' ? ' on' : '') + '">Trending</a>' +
-          '<a href="index.html?type=videos" class="nav-a' + (PAGE === 'index' && params().type === 'videos' ? ' on' : '') + '">Episodes</a>' +
-          '<a href="index.html?type=series" class="nav-a' + (PAGE === 'index' && params().type === 'series' ? ' on' : '') + '">Series</a>' +
-          '<a href="genre.html?slug=uncensored" class="nav-a' + (PAGE === 'genre' && params().slug === 'uncensored' ? ' on' : '') + '">Uncensored</a>' +
-          '<a href="index.html?type=calendar" class="nav-a' + (PAGE === 'index' && params().type === 'calendar' ? ' on' : '') + '">Calendar</a>' +
-          (dropItems
-            ? '<div class="nav-drop" id="navDrop">' +
-                '<span class="nav-drop-btn">' +
-                  'Genres ' +
-                  '<svg viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-                '</span>' +
-                '<div class="drop-panel">' + dropItems + '</div>' +
-              '</div>'
-            : ''
+          '<a class="nav-a'+on(PAGE==='index'&&!p.type&&!p.search)+'" href="index.html">Home</a>' +
+          '<a class="nav-a'+on(PAGE==='index'&&p.type==='trending')+'" href="index.html?type=trending">Trending</a>' +
+          '<a class="nav-a'+on(PAGE==='index'&&p.type==='videos')+'" href="index.html?type=videos">Episodes</a>' +
+          '<a class="nav-a'+on(PAGE==='index'&&p.type==='series')+'" href="index.html?type=series">Series</a>' +
+          '<a class="nav-a'+on(PAGE==='genre'&&p.slug==='uncensored')+'" href="genre.html?slug=uncensored">Uncensored</a>' +
+          '<a class="nav-a'+on(PAGE==='index'&&p.type==='calendar')+'" href="index.html?type=calendar">Calendar</a>' +
+          (dropItems?
+            '<div class="nav-drop" id="navDrop">'+
+              '<span class="nav-drop-btn">Genres '+
+                '<svg viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'+
+              '</span>'+
+              '<div class="drop-panel">'+dropItems+'</div>'+
+            '</div>'
+          : '<a class="nav-a'+on(PAGE==='genre')+'" href="genre.html">Genres</a>'
           ) +
         '</nav>' +
         '<div class="nav-right">' +
-          '<form class="search-form" id="searchForm">' +
-            '<div class="search-wrap">' +
-              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>' +
-              '<input class="search-inp" id="searchInp" type="text" placeholder="Search series…" autocomplete="off">' +
-            '</div>' +
-            '<button class="search-btn" type="submit">Search</button>' +
-          '</form>' +
-        '</div>' +
-        '<button class="nav-ham" id="navHam" aria-label="Menu"><span></span><span></span><span></span></button>' +
+          '<form class="s-form" id="sfDsk">' +
+            '<div class="s-wrap">'+
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>'+
+              '<input class="s-inp" id="siDsk" type="text" placeholder="Search series…" autocomplete="off">'+
+            '</div>'+
+            '<button class="s-btn" type="submit">Search</button>'+
+          '</form>'+
+        '</div>'+
+        '<button class="nav-ham" id="navHam" aria-label="Menu"><span></span><span></span><span></span></button>'+
       '</div>' +
-
       /* Mobile drawer */
-      '<div class="mobile-nav" id="mobNav">' +
-        '<div class="mob-search">' +
-          '<form id="mobSearchForm" style="display:flex;gap:.4rem;width:100%">' +
-            '<input class="search-inp" id="mobSearchInp" type="text" placeholder="Search…" autocomplete="off" style="flex:1;width:auto">' +
-            '<button class="search-btn" type="submit">Go</button>' +
+      '<div class="mob-nav" id="mobNav">' +
+        '<div class="mob-s">' +
+          '<form id="sfMob" style="display:flex;gap:.4rem;width:100%">' +
+            '<input class="s-inp" id="siMob" type="text" placeholder="Search…" autocomplete="off" style="flex:1;width:auto">' +
+            '<button class="s-btn" type="submit">Go</button>' +
           '</form>' +
         '</div>' +
         '<a class="mob-a" href="index.html">Home</a>' +
@@ -235,604 +196,517 @@ document.addEventListener('DOMContentLoaded', function () {
         '<a class="mob-a" href="index.html?type=series">All Series</a>' +
         '<a class="mob-a" href="genre.html?slug=uncensored">Uncensored</a>' +
         '<a class="mob-a" href="index.html?type=calendar">Calendar</a>' +
-        (mobGenres ? '<div class="mob-section-label">Genres</div>' + mobGenres : '') +
+        (mobGenres?'<div class="mob-lbl">Genres</div>'+mobGenres:'') +
       '</div>';
 
     /* Hamburger */
     var ham = document.getElementById('navHam');
     var mob = document.getElementById('mobNav');
-    if (ham && mob) {
-      ham.addEventListener('click', function () {
-        var open = mob.classList.toggle('open');
-        ham.classList.toggle('open', open);
+    if(ham&&mob){
+      ham.addEventListener('click', function(){
+        var o=mob.classList.toggle('open'); ham.classList.toggle('open',o);
       });
     }
 
-    /* Genres dropdown */
+    /* Dropdown */
     var drop = document.getElementById('navDrop');
-    if (drop) {
-      drop.querySelector('.nav-drop-btn').addEventListener('click', function (e) {
-        e.stopPropagation();
-        drop.classList.toggle('open');
+    if(drop){
+      drop.querySelector('.nav-drop-btn').addEventListener('click', function(e){
+        e.stopPropagation(); drop.classList.toggle('open');
       });
-      document.addEventListener('click', function () { drop.classList.remove('open'); });
+      document.addEventListener('click', function(){ drop.classList.remove('open'); });
     }
 
-    /* Search handlers */
-    function bindSearch(formId, inpId) {
-      var f = document.getElementById(formId);
-      var i = document.getElementById(inpId);
-      if (!f || !i) return;
-      f.addEventListener('submit', function (e) {
+    /* Search */
+    function bindSearch(fid, iid){
+      var f=document.getElementById(fid), i=document.getElementById(iid);
+      if(!f||!i) return;
+      if(p.search) i.value=p.search;
+      f.addEventListener('submit', function(e){
         e.preventDefault();
-        var q = i.value.trim();
-        if (q) window.location.href = 'index.html?search=' + encodeURIComponent(q);
+        var q=i.value.trim();
+        if(q) window.location.href='index.html?search='+encodeURIComponent(q);
       });
     }
-    bindSearch('searchForm', 'searchInp');
-    bindSearch('mobSearchForm', 'mobSearchInp');
-
-    /* Pre-fill search input if on search page */
-    var p = params();
-    if (p.search) {
-      var si = document.getElementById('searchInp');
-      if (si) si.value = p.search;
-    }
+    bindSearch('sfDsk','siDsk');
+    bindSearch('sfMob','siMob');
   }
 
   function buildFooter(extra) {
     var el = document.getElementById('siteFooter');
-    if (!el) return;
-    var links = (extra && extra.partnerLinks) || [];
-    var copy = (extra && extra.copyright) || 'WatchHentai.net © 2025';
-    var linksHtml = links.slice(0, 8).map(function (l) {
-      return '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.name) + '</a>';
+    if(!el) return;
+    var links = (extra&&extra.partnerLinks) || [];
+    var copy  = (extra&&extra.copyright) || 'WatchHentai.net © 2025';
+    var lh = links.slice(0,8).map(function(l){
+      return '<a href="'+x(l.url)+'" target="_blank" rel="noopener">'+x(l.name)+'</a>';
     }).join('');
     el.innerHTML =
-      '<div class="footer-inner">' +
-        '<div class="footer-brand">Watch<em>Hentai</em></div>' +
-        (linksHtml ? '<div class="footer-links-row">' + linksHtml + '</div>' : '') +
-        '<p class="footer-copy">' + esc(copy) + ' — All rights belong to their respective owners. This site does not host any files.</p>' +
+      '<div class="ft-in">' +
+        '<div class="ft-brand">Watch<em>Hentai</em></div>' +
+        (lh?'<div class="ft-links">'+lh+'</div>':'') +
+        '<p class="ft-copy">'+x(copy)+' — All rights belong to their respective owners. This site does not host any files.</p>' +
       '</div>';
   }
 
-  /* ══════════════════════════════════════════════════════════
+  /* ══════════════════════════════════════════════════
      INDEX PAGE
-  ══════════════════════════════════════════════════════════ */
-
+  ══════════════════════════════════════════════════ */
   function initIndex() {
-    var p = params();
+    var p = P();
 
-    if (p.search) {
-      hideAll(['heroSec', 'homeSecs', 'listSec', 'calSec']);
+    if(p.search){
+      hideAll(['heroSec','homeSecs','listSec','calSec']);
       show('searchSec');
-      runSearch(p.search, parseInt(p.page) || 1);
+      doSearch(p.search, parseInt(p.page)||1);
       return;
     }
 
     var type = p.type;
-    if (type === 'trending' || type === 'videos' || type === 'series') {
-      hideAll(['heroSec', 'homeSecs', 'searchSec', 'calSec']);
+    if(type==='trending'||type==='videos'||type==='series'){
+      hideAll(['heroSec','homeSecs','searchSec','calSec']);
       show('listSec');
-      var titles = { trending: 'Trending Series', videos: 'Latest Episodes', series: 'All Series' };
-      var titleEl = document.getElementById('listTitle');
-      if (titleEl) titleEl.textContent = titles[type] || '';
-      runList(type, parseInt(p.page) || 1);
+      var titles={trending:'Trending Series',videos:'Latest Episodes',series:'All Series'};
+      var te=document.getElementById('listTitle'); if(te) te.textContent=titles[type]||'';
+      doList(type, parseInt(p.page)||1);
       return;
     }
 
-    if (type === 'calendar') {
-      hideAll(['heroSec', 'homeSecs', 'searchSec', 'listSec']);
+    if(type==='calendar'){
+      hideAll(['heroSec','homeSecs','searchSec','listSec']);
       show('calSec');
-      runCalendar();
+      doCal();
       return;
     }
 
-    /* Default: home */
-    hideAll(['listSec', 'searchSec', 'calSec']);
+    /* HOME */
+    hideAll(['listSec','searchSec','calSec']);
     show('heroSec');
     show('homeSecs');
-    runHome();
-  }
-
-  function hideAll(ids) {
-    ids.forEach(function (id) { hide(id); });
+    doHome();
   }
 
   /* HOME */
-  function runHome() {
-    var sliderEl = document.getElementById('heroSlider');
-    var newEl = document.getElementById('newEpGrid');
+  function doHome() {
+    var newEl   = document.getElementById('newEpGrid');
     var trendEl = document.getElementById('trendGrid');
-
-    if (newEl) newEl.innerHTML = skels(12, '16/9');
-    if (trendEl) trendEl.innerHTML = skels(12);
+    if(newEl)   newEl.innerHTML   = skels(12,'16/9');
+    if(trendEl) trendEl.innerHTML = skels(12,'2/3');
 
     apiFetch('/home')
-      .then(function (data) {
+      .then(function(data){
         buildSlider(data.featured || []);
-        fillGrid(newEl, data.newEpisodes || [], 'ep', 12);
-        fillGrid(trendEl, data.trending || [], 'series', 12);
+        fill(newEl,   data.newEpisodes||[], 'ep',     12);
+        fill(trendEl, data.trending||[],    'series', 12);
       })
-      .catch(function () {
-        if (sliderEl) sliderEl.innerHTML = '';
-        if (newEl) newEl.innerHTML = emptyHTML('Failed to load episodes.');
-        if (trendEl) trendEl.innerHTML = emptyHTML('Failed to load trending.');
-        toast('Failed to load home content');
+      .catch(function(){
+        buildSlider([]);
+        if(newEl)   newEl.innerHTML   = empty('Failed to load episodes.');
+        if(trendEl) trendEl.innerHTML = empty('Failed to load trending.');
+        toast('Failed to load home');
       });
   }
 
-  /* FEATURED SLIDER */
+  /* HERO SLIDER */
   function buildSlider(items) {
     var wrap = document.getElementById('heroSlider');
-    if (!wrap) return;
-    if (!items.length) { wrap.innerHTML = ''; return; }
+    if(!wrap) return;
 
-    var idx = 0;
-    var timer = null;
+    /* If no featured items — show a clean fallback banner instead of blank space */
+    if(!items.length){
+      wrap.innerHTML =
+        '<div class="hero-empty">' +
+          '<div style="text-align:center;padding:3rem 1.4rem;animation:hIn .5s ease">' +
+            '<p style="font-family:var(--fd);font-size:clamp(1.6rem,4vw,2.8rem);font-weight:700;color:#fff;margin-bottom:.75rem">Welcome to <span style="color:var(--red)">WatchHentai</span></p>' +
+            '<p style="color:var(--t2);font-size:.9rem;margin-bottom:1.5rem">Browse thousands of hentai series and episodes</p>' +
+            '<div style="display:flex;gap:.65rem;justify-content:center;flex-wrap:wrap">' +
+              '<a href="index.html?type=trending" class="btn btn-red">🔥 Trending</a>' +
+              '<a href="index.html?type=videos" class="btn btn-ghost">🎬 New Episodes</a>' +
+              '<a href="genre.html" class="btn btn-ghost">🏷️ Browse Genres</a>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      return;
+    }
+
+    var idx = 0, timer = null;
 
     function render(i) {
       clearTimeout(timer);
       var f = items[i];
-      var slug = slugFrom(f.url);
-      var genreHTML = (f.genres || []).slice(0, 3).map(function (g) {
-        return '<span class="hero-tag">' + esc(g) + '</span>';
-      }).join('');
-      var syn = (f.synopsis || '').slice(0, 180) + (f.synopsis && f.synopsis.length > 180 ? '…' : '');
-      var dots = items.map(function (_, j) {
-        return '<span class="hero-dot' + (j === i ? ' on' : '') + '" data-i="' + j + '"></span>';
-      }).join('');
+      var s = slug(f.url);
+      var genH = (f.genres||[]).slice(0,3).map(function(g){ return '<span class="h-tag">'+x(g)+'</span>'; }).join('');
+      var syn  = (f.synopsis||'').slice(0,180) + (f.synopsis&&f.synopsis.length>180?'…':'');
+      var dots = items.map(function(_,j){ return '<span class="h-dot'+(j===i?' on':'')+'" data-i="'+j+'"></span>'; }).join('');
 
       wrap.innerHTML =
-        '<div class="hero-slide" style="background-image:url(\'' + esc(f.backdrop || f.poster) + '\')">' +
+        '<div class="hero-slide" style="background-image:url(\''+x(f.backdrop||f.poster)+'\')">' +
           '<div class="hero-content">' +
-            (f.year ? '<div class="hero-tags"><span class="hero-tag alt">' + esc(f.year) + '</span>' + genreHTML + '</div>' : (genreHTML ? '<div class="hero-tags">' + genreHTML + '</div>' : '')) +
-            '<h1 class="hero-title">' + esc(f.title) + '</h1>' +
+            (f.year||genH?
+              '<div class="hero-tags">'+(f.year?'<span class="h-tag yr">'+x(f.year)+'</span>':'')+genH+'</div>':'') +
+            '<h1 class="hero-title">'+x(f.title)+'</h1>' +
             '<div class="hero-meta">' +
-              (f.rating ? '<span class="rating">★ ' + esc(f.rating) + '</span>' : '') +
-              (f.year ? '<span>' + esc(f.year) + '</span>' : '') +
+              (f.rating?'<span class="h-rating">★ '+x(f.rating)+'</span>':'')+
+              (f.year?'<span>'+x(f.year)+'</span>':'')+
             '</div>' +
-            (syn ? '<p class="hero-synopsis">' + esc(syn) + '</p>' : '') +
-            '<div class="hero-actions">' +
-              '<a href="series.html?slug=' + esc(slug) + '" class="btn btn-red">▶ View Series</a>' +
-              '<a href="series.html?slug=' + esc(slug) + '" class="btn btn-ghost">Episodes</a>' +
-            '</div>' +
-          '</div>' +
-          '<div class="hero-poster-col">' +
-            '<img class="hero-poster" src="' + esc(f.poster) + '" alt="' + esc(f.title) + '" onerror="this.style.display=\'none\'">' +
-          '</div>' +
-        '</div>' +
-        '<div class="hero-dots">' + dots + '</div>' +
-        (items.length > 1 ? '<button class="hero-prev">‹</button><button class="hero-next">›</button>' : '');
+            (syn?'<p class="hero-syn">'+x(syn)+'</p>':'')+
+            '<div class="hero-acts">'+
+              '<a href="series.html?slug='+x(s)+'" class="btn btn-red">▶ View Series</a>'+
+              '<a href="series.html?slug='+x(s)+'" class="btn btn-ghost">Episodes</a>'+
+            '</div>'+
+          '</div>'+
+          '<div class="hero-poster-col">'+
+            '<img class="hero-poster" src="'+x(f.poster)+'" alt="'+x(f.title)+'" onerror="this.style.display=\'none\'">'+
+          '</div>'+
+        '</div>'+
+        '<div class="hero-dots">'+dots+'</div>'+
+        (items.length>1?'<button class="hero-prev">‹</button><button class="hero-next">›</button>':'');
 
-      /* Dot clicks */
-      qsa('.hero-dot', wrap).forEach(function (d) {
-        d.addEventListener('click', function () {
-          idx = parseInt(d.getAttribute('data-i'), 10);
-          render(idx);
-        });
+      $$('.h-dot',wrap).forEach(function(d){
+        d.addEventListener('click',function(){ idx=parseInt(d.getAttribute('data-i'),10); render(idx); });
       });
+      var prev=$('.hero-prev',wrap), next=$('.hero-next',wrap);
+      if(prev) prev.addEventListener('click',function(){ idx=(idx-1+items.length)%items.length; render(idx); });
+      if(next) next.addEventListener('click',function(){ idx=(idx+1)%items.length; render(idx); });
 
-      /* Prev/Next */
-      var prev = qs('.hero-prev', wrap);
-      var next = qs('.hero-next', wrap);
-      if (prev) prev.addEventListener('click', function () { idx = (idx - 1 + items.length) % items.length; render(idx); });
-      if (next) next.addEventListener('click', function () { idx = (idx + 1) % items.length; render(idx); });
-
-      timer = setTimeout(function () {
-        idx = (idx + 1) % items.length;
-        render(idx);
-      }, 6500);
+      timer = setTimeout(function(){ idx=(idx+1)%items.length; render(idx); }, 6500);
     }
-
     render(0);
   }
 
-  /* LIST (trending / videos / series) */
-  function runList(type, page) {
-    var grid = document.getElementById('listGrid');
-    var pag = document.getElementById('listPag');
-    if (!grid) return;
+  /* LIST */
+  function doList(type, page) {
+    var grid=$('div#listGrid'), pag=$('div#listPag');
+    // fallback: get by id
+    grid = document.getElementById('listGrid');
+    pag  = document.getElementById('listPag');
+    var isEp=(type==='videos');
+    if(grid) grid.innerHTML=skels(24,isEp?'16/9':'2/3');
+    if(pag)  pag.innerHTML='';
 
-    var isEp = (type === 'videos');
-    grid.innerHTML = skels(24, isEp ? '16/9' : '2/3');
-    if (pag) pag.innerHTML = '';
-
-    apiFetch('/' + type + '?page=' + page)
-      .then(function (data) {
-        var items = data.items || [];
-        if (!items.length) { grid.innerHTML = emptyHTML('No content found.'); return; }
-        grid.innerHTML = items.map(isEp ? epCard : seriesCard).join('');
-        if (pag) {
-          pag.innerHTML = pagHTML(data.page || page, data.totalPages || 1, function (p) {
-            window.location.href = 'index.html?type=' + type + '&page=' + p;
+    apiFetch('/'+type+'?page='+page)
+      .then(function(data){
+        var items=data.items||[];
+        if(!items.length){ if(grid) grid.innerHTML=empty('No content found.'); return; }
+        if(grid) grid.innerHTML=items.map(isEp?epCard:serCard).join('');
+        if(pag){
+          pag.innerHTML=pagHTML(data.page||page, data.totalPages||1, function(p){
+            window.location.href='index.html?type='+type+'&page='+p;
           });
-          bindPager(pag, function (p) {
-            window.location.href = 'index.html?type=' + type + '&page=' + p;
-          });
+          bindPager(pag, function(p){ window.location.href='index.html?type='+type+'&page='+p; });
         }
       })
-      .catch(function () {
-        grid.innerHTML = emptyHTML('Failed to load content.');
-        toast('Load failed');
-      });
+      .catch(function(){ if(grid) grid.innerHTML=empty('Failed to load.'); toast('Load failed'); });
   }
 
   /* CALENDAR */
-  function runCalendar() {
-    var el = document.getElementById('calContent');
-    if (!el) return;
-    el.innerHTML = '<div class="spin"></div>';
-
+  function doCal() {
+    var el=document.getElementById('calContent');
+    if(!el) return;
+    el.innerHTML='<div class="spin"></div>';
     apiFetch('/calendar')
-      .then(function (data) {
-        var months = data.months || [];
-        if (!months.length) { el.innerHTML = emptyHTML('No calendar data.'); return; }
-        var h = '';
-        months.forEach(function (m) {
-          var eps = m.episodes || [];
-          if (!eps.length) return;
-          h += '<div style="margin-bottom:2.5rem">';
-          h += '<div class="section-hd"><div class="section-hd-left">' +
-               '<span class="section-eyebrow">Schedule</span>' +
-               '<h2 class="section-title">' + esc(m.month) + '</h2>' +
-               '</div></div>';
-          h += '<div class="grid ep">' + eps.map(epCard).join('') + '</div>';
-          h += '</div>';
+      .then(function(data){
+        var months=data.months||[];
+        if(!months.length){ el.innerHTML=empty('No calendar data.'); return; }
+        var h='';
+        months.forEach(function(m){
+          var eps=m.episodes||[];
+          if(!eps.length) return;
+          h+='<div style="margin-bottom:2.5rem">'+
+             '<div class="sec-hd"><div class="sec-hd-l">'+
+               '<span class="eyebrow">Schedule</span>'+
+               '<h2 class="sec-title">'+x(m.month)+'</h2>'+
+             '</div></div>'+
+             '<div class="grid ep">'+eps.map(epCard).join('')+'</div>'+
+             '</div>';
         });
-        el.innerHTML = h || emptyHTML('No episodes scheduled.');
+        el.innerHTML=h||empty('No episodes scheduled.');
       })
-      .catch(function () {
-        el.innerHTML = emptyHTML('Failed to load calendar.');
-      });
+      .catch(function(){ el.innerHTML=empty('Failed to load calendar.'); });
   }
 
   /* SEARCH */
-  function runSearch(q, page) {
-    var titleEl = document.getElementById('searchTitle');
-    var grid = document.getElementById('searchGrid');
-    var pag = document.getElementById('searchPag');
+  function doSearch(q, page) {
+    var te=document.getElementById('searchTitle');
+    var grid=document.getElementById('searchGrid');
+    var pag=document.getElementById('searchPag');
+    if(te) te.innerHTML='Results for <span>"'+x(q)+'"</span>';
+    if(grid) grid.innerHTML=skels(24);
+    if(pag) pag.innerHTML='';
 
-    if (titleEl) titleEl.innerHTML = 'Results for <span>"' + esc(q) + '"</span>';
-    if (grid) grid.innerHTML = skels(24);
-    if (pag) pag.innerHTML = '';
-
-    apiFetch('/search?q=' + encodeURIComponent(q) + '&page=' + page)
-      .then(function (data) {
-        var items = data.items || [];
-        if (!items.length) {
-          if (grid) grid.innerHTML = emptyHTML('No results for "' + q + '"');
-          return;
-        }
-        if (grid) grid.innerHTML = items.map(seriesCard).join('');
-        if (pag) {
-          pag.innerHTML = pagHTML(data.page || page, data.totalPages || 1, function (p) {
-            window.location.href = 'index.html?search=' + encodeURIComponent(q) + '&page=' + p;
+    apiFetch('/search?q='+encodeURIComponent(q)+'&page='+page)
+      .then(function(data){
+        var items=data.items||[];
+        if(!items.length){ if(grid) grid.innerHTML=empty('No results for "'+q+'"'); return; }
+        if(grid) grid.innerHTML=items.map(serCard).join('');
+        if(pag){
+          pag.innerHTML=pagHTML(data.page||page, data.totalPages||1, function(p){
+            window.location.href='index.html?search='+encodeURIComponent(q)+'&page='+p;
           });
-          bindPager(pag, function (p) {
-            window.location.href = 'index.html?search=' + encodeURIComponent(q) + '&page=' + p;
-          });
+          bindPager(pag, function(p){ window.location.href='index.html?search='+encodeURIComponent(q)+'&page='+p; });
         }
       })
-      .catch(function () {
-        if (grid) grid.innerHTML = emptyHTML('Search failed.');
-      });
+      .catch(function(){ if(grid) grid.innerHTML=empty('Search failed.'); });
   }
 
-  /* ══════════════════════════════════════════════════════════
+  /* ══════════════════════════════════════════════════
      GENRE PAGE
-  ══════════════════════════════════════════════════════════ */
-
+  ══════════════════════════════════════════════════ */
   function initGenre() {
-    var p = params();
-    var slug = p.slug || '';
-    var page = parseInt(p.page) || 1;
+    var p=P(), s=p.slug||'', page=parseInt(p.page)||1;
 
-    /* Load sidebar */
     apiFetch('/genres')
-      .then(function (genres) {
-        var listEl = document.getElementById('gsList');
-        if (!listEl) return;
-        if (!genres || !genres.length) { listEl.innerHTML = '<p style="color:var(--text3);padding:.5rem .75rem;font-size:.8rem">No genres found.</p>'; return; }
-        listEl.innerHTML = genres.map(function (g) {
-          return '<a class="gs-a' + (g.slug === slug ? ' on' : '') + '" href="genre.html?slug=' + esc(g.slug) + '">' +
-            esc(g.name) +
-            '<span class="gs-count">' + (g.count || 0) + '</span>' +
-          '</a>';
+      .then(function(genres){
+        var listEl=document.getElementById('gsList');
+        if(!listEl) return;
+        if(!genres||!genres.length){ listEl.innerHTML='<p style="color:var(--t3);padding:.5rem .7rem;font-size:.79rem">No genres.</p>'; return; }
+        listEl.innerHTML=genres.map(function(g){
+          return '<a class="g-a'+(g.slug===s?' on':'')+'" href="genre.html?slug='+x(g.slug)+'">'+
+            x(g.name)+'<span class="g-cnt">'+(g.count||0)+'</span></a>';
         }).join('');
       })
-      .catch(function () {});
+      .catch(function(){});
 
-    if (!slug) return; /* Just sidebar, no grid */
+    if(!s) return;
 
-    /* Load grid */
-    var titleEl = document.getElementById('gsHeroTitle');
-    var subEl = document.getElementById('gsHeroSub');
-    var grid = document.getElementById('gsGrid');
-    var pag = document.getElementById('gsPag');
+    var titleEl=document.getElementById('gsTitle');
+    var subEl  =document.getElementById('gsSub');
+    var grid   =document.getElementById('gsGrid');
+    var pag    =document.getElementById('gsPag');
+    if(grid) grid.innerHTML=skels(24);
 
-    if (grid) grid.innerHTML = skels(24);
-
-    apiFetch('/genre/' + slug + '?page=' + page)
-      .then(function (data) {
-        var name = data.genre || slug;
-        document.title = name + ' — WatchHentai';
-        if (titleEl) titleEl.textContent = name;
-        if (subEl) subEl.textContent = (data.totalPages || 0) + ' pages of series';
-        var items = data.items || [];
-        if (!items.length) { if (grid) grid.innerHTML = emptyHTML('No series found.'); return; }
-        if (grid) grid.innerHTML = items.map(seriesCard).join('');
-        if (pag) {
-          pag.innerHTML = pagHTML(data.page || page, data.totalPages || 1, function (p) {
-            window.location.href = 'genre.html?slug=' + slug + '&page=' + p;
+    apiFetch('/genre/'+s+'?page='+page)
+      .then(function(data){
+        var name=data.genre||s;
+        document.title=name+' — WatchHentai';
+        if(titleEl) titleEl.textContent=name;
+        if(subEl)   subEl.textContent=(data.totalPages||0)+' pages of series';
+        var items=data.items||[];
+        if(!items.length){ if(grid) grid.innerHTML=empty('No series found.'); return; }
+        if(grid) grid.innerHTML=items.map(serCard).join('');
+        if(pag){
+          pag.innerHTML=pagHTML(data.page||page, data.totalPages||1, function(p){
+            window.location.href='genre.html?slug='+s+'&page='+p;
           });
-          bindPager(pag, function (p) {
-            window.location.href = 'genre.html?slug=' + slug + '&page=' + p;
-          });
+          bindPager(pag, function(p){ window.location.href='genre.html?slug='+s+'&page='+p; });
         }
       })
-      .catch(function () {
-        if (grid) grid.innerHTML = emptyHTML('Failed to load genre.');
+      .catch(function(){
+        if(grid) grid.innerHTML=empty('Failed to load genre.');
         toast('Failed to load genre');
       });
   }
 
-  /* ══════════════════════════════════════════════════════════
+  /* ══════════════════════════════════════════════════
      SERIES DETAIL
-  ══════════════════════════════════════════════════════════ */
-
+  ══════════════════════════════════════════════════ */
   function initSeries() {
-    var p = params();
-    if (!p.slug) { window.location.href = 'index.html'; return; }
+    var p=P();
+    if(!p.slug){ window.location.href='index.html'; return; }
+    var el=document.getElementById('seriesContent');
+    if(el) el.innerHTML='<div class="spin"></div>';
 
-    var content = document.getElementById('seriesContent');
-    if (content) content.innerHTML = '<div class="spin"></div>';
-
-    apiFetch('/series/' + p.slug)
-      .then(function (d) {
-        document.title = d.title + ' — WatchHentai';
-        renderSeries(d, content);
+    apiFetch('/series/'+p.slug)
+      .then(function(d){
+        document.title=d.title+' — WatchHentai';
+        renderSeries(d,el);
       })
-      .catch(function () {
-        if (content) content.innerHTML = '<div class="empty"><span class="empty-ico">⚠️</span><p>Series not found.</p></div>';
+      .catch(function(){
+        if(el) el.innerHTML='<div class="empty"><span class="empty-ico">⚠️</span><p>Series not found.</p></div>';
         toast('Failed to load series');
       });
   }
 
-  function renderSeries(d, el) {
-    if (!el) return;
-    var cCls = d.censored === 'uncensored' ? 'unc' : d.censored === 'censored' ? 'cen' : '';
-    var sCls = (d.status || '').toLowerCase();
+  function renderSeries(d,el) {
+    if(!el) return;
+    var cCls=d.censored==='uncensored'?'unc':d.censored==='censored'?'cen':'';
+    var sCls=(d.status||'').toLowerCase();
 
-    var genChips = (d.genres || []).map(function (g) {
-      return '<a class="chip" href="genre.html?slug=' + esc(slugFrom(g.url)) + '">' + esc(g.name) + '</a>';
+    var genChips=(d.genres||[]).map(function(g){
+      return '<a class="chip" href="genre.html?slug='+x(slug(g.url))+'">'+x(g.name)+'</a>';
     }).join('');
 
-    var eps = (d.episodes || []).map(function (ep) {
-      var s = slugFrom(ep.url);
-      return '<a class="ep-card-item" href="watch.html?slug=' + esc(s) + '">' +
-        '<div class="ep-thumb">' +
-          '<img src="' + esc(ep.thumbnail || '') + '" alt="EP ' + ep.number + '" loading="lazy" onerror="this.src=\'https://placehold.co/400x225/0e1220/e8334a?text=EP\'">' +
-          '<div class="ep-play"><svg viewBox="0 0 24 24" fill="currentColor" width="44" height="44"><path d="M8 5v14l11-7z"/></svg></div>' +
-        '</div>' +
-        '<div class="ep-info">' +
-          '<span class="ep-num">Episode ' + ep.number + '</span>' +
-          '<span class="ep-name">' + esc(ep.title) + '</span>' +
-          '<span class="ep-date">' + esc(ep.date || '') + '</span>' +
-        '</div>' +
+    var eps=(d.episodes||[]).map(function(ep){
+      var s2=slug(ep.url);
+      return '<a class="ep-item" href="watch.html?slug='+x(s2)+'">'+
+        '<div class="ep-thumb">'+
+          '<img src="'+x(ep.thumbnail||'')+'" alt="EP '+ep.number+'" loading="lazy" onerror="this.src=\'https://placehold.co/400x225/0e1220/e8334a?text=EP\'">'+
+          '<div class="ep-play"><svg viewBox="0 0 24 24" fill="currentColor" width="40" height="40"><path d="M8 5v14l11-7z"/></svg></div>'+
+        '</div>'+
+        '<div class="ep-info">'+
+          '<span class="ep-n">Episode '+ep.number+'</span>'+
+          '<span class="ep-name">'+x(ep.title)+'</span>'+
+          '<span class="ep-date">'+x(ep.date||'')+'</span>'+
+        '</div>'+
       '</a>';
     }).join('');
 
-    var related = (d.related || []).slice(0, 6).map(function (r) {
-      return '<a class="card" href="series.html?slug=' + esc(slugFrom(r.url)) + '">' +
-        '<div class="card-thumb">' +
-          '<img src="' + esc(r.poster || '') + '" alt="' + esc(r.title) + '" loading="lazy" onerror="this.src=\'https://placehold.co/300x420/0e1220/e8334a?text=No+Image\'">' +
-          '<div class="card-play"><div class="card-play-inner"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div></div>' +
-        '</div>' +
-        '<div class="card-body"><p class="card-name">' + esc(r.title) + '</p></div>' +
+    var related=(d.related||[]).slice(0,6).map(function(r){
+      return '<a class="card" href="series.html?slug='+x(slug(r.url))+'">'+
+        '<div class="c-thumb"><img src="'+x(r.poster||'')+'" alt="'+x(r.title)+'" loading="lazy" onerror="this.src=\'https://placehold.co/300x420/0e1220/e8334a?text=N\'">'+
+        '<div class="c-play"><div class="c-play-ico">'+playIco()+'</div></div></div>'+
+        '<div class="c-body"><p class="c-name">'+x(r.title)+'</p></div>'+
       '</a>';
     }).join('');
 
-    el.innerHTML =
-      '<div class="series-hero" style="background-image:url(\'' + esc(d.backdrop || d.poster) + '\')">' +
-        '<div class="series-hero-inner">' +
-          '<img class="series-poster-img" src="' + esc(d.poster) + '" alt="' + esc(d.title) + '" onerror="this.src=\'https://placehold.co/300x420/0e1220/e8334a?text=No+Image\'">' +
-          '<div class="series-meta-block">' +
-            '<h1 class="series-ttl">' + esc(d.title) + '</h1>' +
-            '<div class="meta-pills">' +
-              (d.rating ? '<span class="pill">★ ' + esc(d.rating) + ' <small style="opacity:.6">(' + (d.votes||0) + ')</small></span>' : '') +
-              (d.year ? '<span class="pill">📅 ' + esc(d.year) + '</span>' : '') +
-              (d.status ? '<span class="pill ' + esc(sCls) + '">' + esc(d.status) + '</span>' : '') +
-              (d.studio ? '<span class="pill">🎬 ' + esc(d.studio) + '</span>' : '') +
-              (d.censored ? '<span class="pill ' + esc(cCls) + '">' + esc(d.censored) + '</span>' : '') +
-            '</div>' +
-            (genChips ? '<div class="genre-chips">' + genChips + '</div>' : '') +
-            (d.synopsis ? '<p class="series-syn">' + esc(d.synopsis) + '</p>' : '') +
-          '</div>' +
-        '</div>' +
-      '</div>' +
-
-      '<div class="series-body-wrap">' +
-        '<div class="section-hd">' +
-          '<div class="section-hd-left">' +
-            '<span class="section-eyebrow">All Episodes</span>' +
-            '<h2 class="section-title">Episodes <small style="font-size:.55em;color:var(--red);font-family:var(--font-ui)">(' + (d.episodes||[]).length + ')</small></h2>' +
-          '</div>' +
-        '</div>' +
-        (eps ? '<div class="ep-grid">' + eps + '</div>' : '<div class="empty"><span class="empty-ico">📺</span><p>No episodes yet.</p></div>') +
-
-        (related
-          ? '<div class="mt-6">' +
-              '<div class="section-hd">' +
-                '<div class="section-hd-left">' +
-                  '<span class="section-eyebrow">More Like This</span>' +
-                  '<h2 class="section-title">Related Series</h2>' +
-                '</div>' +
-              '</div>' +
-              '<div class="grid">' + related + '</div>' +
-            '</div>'
-          : ''
-        ) +
-      '</div>';
+    el.innerHTML=
+      '<div class="ser-hero" style="background-image:url(\''+x(d.backdrop||d.poster)+'\')">'+
+        '<div class="ser-hero-in">'+
+          '<img class="ser-poster" src="'+x(d.poster)+'" alt="'+x(d.title)+'" onerror="this.src=\'https://placehold.co/300x420/0e1220/e8334a?text=N\'">'+
+          '<div class="ser-meta">'+
+            '<h1 class="ser-ttl">'+x(d.title)+'</h1>'+
+            '<div class="pills">'+
+              (d.rating?'<span class="pill">★ '+x(d.rating)+'<small style="opacity:.6"> ('+x(d.votes||0)+')</small></span>':'')+
+              (d.year?'<span class="pill">📅 '+x(d.year)+'</span>':'')+
+              (d.status?'<span class="pill '+x(sCls)+'">'+x(d.status)+'</span>':'')+
+              (d.studio?'<span class="pill">🎬 '+x(d.studio)+'</span>':'')+
+              (d.censored?'<span class="pill '+x(cCls)+'">'+x(d.censored)+'</span>':'')+
+            '</div>'+
+            (genChips?'<div class="g-chips">'+genChips+'</div>':'')+
+            (d.synopsis?'<p class="ser-syn">'+x(d.synopsis)+'</p>':'')+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      '<div class="ser-body">'+
+        '<div class="sec-hd"><div class="sec-hd-l"><span class="eyebrow">All Episodes</span>'+
+        '<h2 class="sec-title">Episodes <small style="font-size:.5em;color:var(--red);font-family:var(--fu)">('+((d.episodes||[]).length)+')</small></h2>'+
+        '</div></div>'+
+        (eps?'<div class="ep-grid">'+eps+'</div>':'<div class="empty"><span class="empty-ico">📺</span><p>No episodes yet.</p></div>')+
+        (related?
+          '<div style="margin-top:3.5rem"><div class="sec-hd"><div class="sec-hd-l"><span class="eyebrow">More Like This</span><h2 class="sec-title">Related Series</h2></div></div>'+
+          '<div class="grid">'+related+'</div></div>':'')
+      +'</div>';
   }
 
-  /* ══════════════════════════════════════════════════════════
+  /* ══════════════════════════════════════════════════
      WATCH PAGE
-  ══════════════════════════════════════════════════════════ */
-
+  ══════════════════════════════════════════════════ */
   function initWatch() {
-    var p = params();
-    if (!p.slug) { window.location.href = 'index.html'; return; }
+    var p=P();
+    if(!p.slug){ window.location.href='index.html'; return; }
+    var el=document.getElementById('watchContent');
+    if(el) el.innerHTML='<div class="spin"></div>';
 
-    var content = document.getElementById('watchContent');
-    if (content) content.innerHTML = '<div class="spin"></div>';
-
-    apiFetch('/watch/' + p.slug)
-      .then(function (d) {
-        document.title = d.title + ' — WatchHentai';
-        renderWatch(d, content);
+    apiFetch('/watch/'+p.slug)
+      .then(function(d){
+        document.title=d.title+' — WatchHentai';
+        renderWatch(d,el);
       })
-      .catch(function () {
-        if (content) content.innerHTML = '<div class="empty"><span class="empty-ico">⚠️</span><p>Episode not found.</p></div>';
+      .catch(function(){
+        if(el) el.innerHTML='<div class="empty"><span class="empty-ico">⚠️</span><p>Episode not found.</p></div>';
         toast('Failed to load episode');
       });
   }
 
-  function renderWatch(d, el) {
-    if (!el) return;
-    var player = d.player || {};
-    var sources = player.sources || [];
-    var defaultSrc = sources.length ? sources[0].src : (player.src || '');
+  function renderWatch(d,el) {
+    if(!el) return;
+    var player=d.player||{};
+    var sources=player.sources||[];
+    var defSrc=sources.length?sources[0].src:(player.src||'');
 
-    var srcTags = sources.map(function (s) {
-      return '<source src="' + esc(s.src) + '" type="' + esc(s.type) + '">';
-    }).join('');
-    if (!srcTags && defaultSrc) srcTags = '<source src="' + esc(defaultSrc) + '" type="video/mp4">';
+    var srcTags=sources.map(function(s){ return '<source src="'+x(s.src)+'" type="'+x(s.type)+'">'; }).join('');
+    if(!srcTags&&defSrc) srcTags='<source src="'+x(defSrc)+'" type="video/mp4">';
 
-    var qBtns = sources.map(function (s, i) {
-      return '<button class="q-pill' + (i === 0 ? ' on' : '') + '" data-src="' + esc(s.src) + '">' + esc(s.label) + '</button>';
+    var qBtns=sources.map(function(s,i){
+      return '<button class="q-pill'+(i===0?' on':'')+'" data-src="'+x(s.src)+'">'+x(s.label)+'</button>';
     }).join('');
 
-    var genChips = (d.genres || []).map(function (g) {
-      return '<a class="chip" href="genre.html?slug=' + esc(slugFrom(g.url)) + '">' + esc(g.name) + '</a>';
+    var genH=(d.genres||[]).map(function(g){
+      return '<a class="chip" href="genre.html?slug='+x(slug(g.url))+'">'+x(g.name)+'</a>';
     }).join('');
 
-    var serSlug = slugFrom(d.seriesUrl);
-    var prevLnk = d.prevEpisode
-      ? '<a href="watch.html?slug=' + esc(slugFrom(d.prevEpisode.url)) + '" class="btn btn-outline">‹ ' + esc(d.prevEpisode.title) + '</a>'
-      : '<span></span>';
-    var nextLnk = d.nextEpisode
-      ? '<a href="watch.html?slug=' + esc(slugFrom(d.nextEpisode.url)) + '" class="btn btn-outline">' + esc(d.nextEpisode.title) + ' ›</a>'
-      : '<span></span>';
+    var serSlug=slug(d.seriesUrl);
+    var prevLnk=d.prevEpisode?'<a href="watch.html?slug='+x(slug(d.prevEpisode.url))+'" class="btn btn-outline">‹ '+x(d.prevEpisode.title)+'</a>':'<span></span>';
+    var nextLnk=d.nextEpisode?'<a href="watch.html?slug='+x(slug(d.nextEpisode.url))+'" class="btn btn-outline">'+x(d.nextEpisode.title)+' ›</a>':'<span></span>';
 
-    var sbEps = (d.episodes || []).map(function (ep) {
-      var s = slugFrom(ep.url);
-      return '<a class="ws-ep' + (ep.isCurrent ? ' now' : '') + '" href="watch.html?slug=' + esc(s) + '">' +
-        '<img src="' + esc(ep.thumbnail || '') + '" alt="EP ' + ep.number + '" loading="lazy" onerror="this.src=\'https://placehold.co/82x47/0e1220/e8334a?text=EP\'">' +
-        '<div class="ws-ep-i">' +
-          '<span class="ws-ep-n">EP ' + ep.number + '</span>' +
-          '<span class="ws-ep-t">' + esc(ep.title) + '</span>' +
-          '<span class="ws-ep-d">' + esc(ep.date || '') + '</span>' +
-        '</div>' +
-        (ep.isCurrent ? '<span class="now-badge">▶ Now</span>' : '') +
+    var sbEps=(d.episodes||[]).map(function(ep){
+      var s2=slug(ep.url);
+      return '<a class="ws-ep'+(ep.isCurrent?' now':'')+'" href="watch.html?slug='+x(s2)+'">'+
+        '<img src="'+x(ep.thumbnail||'')+'" alt="EP '+ep.number+'" loading="lazy" onerror="this.src=\'https://placehold.co/80x45/0e1220/e8334a?text=EP\'">'+
+        '<div class="ws-ep-i">'+
+          '<span class="ws-n">EP '+ep.number+'</span>'+
+          '<span class="ws-t">'+x(ep.title)+'</span>'+
+          '<span class="ws-d">'+x(ep.date||'')+'</span>'+
+        '</div>'+
+        (ep.isCurrent?'<span class="now-b">▶ Now</span>':'')+
       '</a>';
     }).join('');
 
-    el.innerHTML =
-      '<div class="watch-wrap">' +
-        '<div class="watch-main">' +
-
-          /* Player */
-          '<div class="player-box">' +
-            '<video id="vPlayer" controls preload="metadata" poster="' + esc(d.thumbnail || '') + '">' +
-              srcTags +
-              'Your browser does not support video.' +
-            '</video>' +
-            '<div class="player-toolbar">' +
-              '<span class="ptb-title">' + esc(d.title) + '</span>' +
-              (qBtns ? '<div class="q-pills">' + qBtns + '</div>' : '') +
-              (player.downloadUrl ? '<a href="' + esc(player.downloadUrl) + '" class="btn btn-outline btn-sm" target="_blank">⬇ Download</a>' : '') +
-            '</div>' +
-          '</div>' +
-
-          /* Nav */
-          '<div class="ep-nav-bar">' +
-            prevLnk +
-            '<a href="series.html?slug=' + esc(serSlug) + '" class="btn btn-ghost">📋 All Episodes</a>' +
-            nextLnk +
-          '</div>' +
-
-          /* Info */
-          '<h1 class="watch-title">' + esc(d.title) + '</h1>' +
-          '<div class="watch-meta">' +
-            (d.views ? '<span class="pill">👁 ' + esc(d.views) + ' views</span>' : '') +
-            (d.censored ? '<span class="pill ' + (d.censored === 'uncensored' ? 'unc' : 'cen') + '">' + esc(d.censored) + '</span>' : '') +
-            genChips +
-          '</div>' +
-          (d.synopsis ? '<p class="watch-syn">' + esc(d.synopsis) + '</p>' : '') +
-
-        '</div>' +
-
-        /* Sidebar */
-        '<aside class="watch-sidebar">' +
-          '<div class="ws-header">' +
-            '<img class="ws-poster" src="' + esc(d.seriesPoster || '') + '" alt="' + esc(d.seriesTitle || '') + '" onerror="this.src=\'https://placehold.co/48x68/0e1220/e8334a?text=P\'">' +
-            '<div style="min-width:0">' +
-              '<a class="ws-sname" href="series.html?slug=' + esc(serSlug) + '">' + esc(d.seriesTitle || '') + '</a>' +
-            '</div>' +
-          '</div>' +
-          '<div class="ws-label">Episodes</div>' +
-          '<div class="ws-eps" id="wsEpsList">' +
-            (sbEps || '<div style="padding:1.5rem;text-align:center;color:var(--text3)">No episodes</div>') +
-          '</div>' +
-        '</aside>' +
-
+    el.innerHTML=
+      '<div class="w-wrap">'+
+        '<div class="w-main">'+
+          '<div class="player-box">'+
+            '<video id="vPlayer" controls preload="metadata" poster="'+x(d.thumbnail||'')+'">'+
+              srcTags+'Your browser does not support video.'+
+            '</video>'+
+            '<div class="player-bar">'+
+              '<span class="pb-title">'+x(d.title)+'</span>'+
+              (qBtns?'<div class="q-pills">'+qBtns+'</div>':'')+
+              (player.downloadUrl?'<a href="'+x(player.downloadUrl)+'" class="btn btn-outline btn-sm" target="_blank">⬇ Download</a>':'')+
+            '</div>'+
+          '</div>'+
+          '<div class="ep-nav">'+prevLnk+'<a href="series.html?slug='+x(serSlug)+'" class="btn btn-ghost">📋 All Episodes</a>'+nextLnk+'</div>'+
+          '<h1 class="w-title">'+x(d.title)+'</h1>'+
+          '<div class="w-meta">'+
+            (d.views?'<span class="pill">👁 '+x(d.views)+' views</span>':'')+
+            (d.censored?'<span class="pill '+(d.censored==='uncensored'?'unc':'cen')+'">'+x(d.censored)+'</span>':'')+
+            genH+
+          '</div>'+
+          (d.synopsis?'<p class="w-syn">'+x(d.synopsis)+'</p>':'')+
+        '</div>'+
+        '<aside class="w-side">'+
+          '<div class="ws-hd">'+
+            '<img class="ws-poster" src="'+x(d.seriesPoster||'')+'" alt="'+x(d.seriesTitle||'')+'" onerror="this.src=\'https://placehold.co/46x66/0e1220/e8334a?text=P\'">'+
+            '<div style="min-width:0"><a class="ws-sname" href="series.html?slug='+x(serSlug)+'">'+x(d.seriesTitle||'')+'</a></div>'+
+          '</div>'+
+          '<div class="ws-lbl">Episodes</div>'+
+          '<div class="ws-eps" id="wsSideEps">'+(sbEps||'<div style="padding:1.5rem;text-align:center;color:var(--t3)">No episodes</div>')+'</div>'+
+        '</aside>'+
       '</div>';
 
-    /* Scroll to current */
-    setTimeout(function () {
-      var cur = qs('.ws-ep.now');
-      if (cur) cur.scrollIntoView({ block: 'center' });
+    /* Scroll to current episode */
+    setTimeout(function(){
+      var cur=$('.ws-ep.now');
+      if(cur) cur.scrollIntoView({block:'center'});
     }, 120);
 
     /* Quality switcher */
-    var vid = document.getElementById('vPlayer');
-    qsa('.q-pill').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        qsa('.q-pill').forEach(function (b) { b.classList.remove('on'); });
+    var vid=document.getElementById('vPlayer');
+    $$('.q-pill').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        $$('.q-pill').forEach(function(b){ b.classList.remove('on'); });
         btn.classList.add('on');
-        if (vid) {
-          var t = vid.currentTime;
-          var playing = !vid.paused;
-          vid.src = btn.getAttribute('data-src');
-          vid.load();
-          vid.currentTime = t;
-          if (playing) vid.play().catch(function () {});
+        if(vid){
+          var t=vid.currentTime, playing=!vid.paused;
+          vid.src=btn.getAttribute('data-src');
+          vid.load(); vid.currentTime=t;
+          if(playing) vid.play().catch(function(){});
         }
       });
     });
   }
 
-  /* ══════════════════════════════════════════════════════════
-     BOOT — load navbar first, then run page
-  ══════════════════════════════════════════════════════════ */
+  /* ══════════════════════════════════════════════════
+     BOOT — /api/extra first, then page init
+     Both .then() AND .catch() call page init
+  ══════════════════════════════════════════════════ */
+  function runPage() {
+    if(PAGE==='index')  initIndex();
+    if(PAGE==='genre')  initGenre();
+    if(PAGE==='series') initSeries();
+    if(PAGE==='watch')  initWatch();
+  }
 
   apiFetch('/extra')
-    .then(function (extra) {
+    .then(function(extra){
       buildNav(extra);
       buildFooter(extra);
+      runPage();
     })
-    .catch(function () {
-      /* Navbar fallback — still works without extra API */
+    .catch(function(){
+      /* Extra API failed → build fallback nav, still run page */
       buildNav({});
       buildFooter({});
-    })
-    .then(function () {
-      /* Always runs whether extra succeeded or failed */
-      if (PAGE === 'index')  initIndex();
-      if (PAGE === 'genre')  initGenre();
-      if (PAGE === 'series') initSeries();
-      if (PAGE === 'watch')  initWatch();
+      runPage();
     });
 
 }); /* end DOMContentLoaded */
