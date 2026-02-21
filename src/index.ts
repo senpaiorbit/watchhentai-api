@@ -12,6 +12,7 @@ import calendar from "./api/pages/calendar";
 import search from "./api/pages/search";
 import series from "./api/pages/series";
 import watch from "./api/pages/watch";
+import download from "./api/pages/download";
 import { scrapeGenreList } from "./lib/scraper";
 
 const app = new Hono().basePath("/api");
@@ -86,6 +87,11 @@ app.route("/series", series);
 // GET /api/watch/tsuki-kagerou-episode-1-id-01
 app.route("/watch", watch);
 
+// ─── Download (episode download page) ────────────────────────────────────────
+// GET /api/download?slug=seikou-senki-pony-celes-episode-1-id-01
+// GET /api/download/seikou-senki-pony-celes-episode-1-id-01
+app.route("/download", download);
+
 // ─── Health ───────────────────────────────────────────────────────────────────
 app.get("/health", (c) =>
   c.json({ success: true, status: "ok", timestamp: new Date().toISOString() })
@@ -124,6 +130,8 @@ app.notFound((c) =>
         "GET /api/series/:slug",
         "GET /api/watch?slug=episode-slug",
         "GET /api/watch/:slug",
+        "GET /api/download?slug=episode-slug",
+        "GET /api/download/:slug",
         "GET /api/search?q=:query&page=1",
         "GET /api/health",
       ],
