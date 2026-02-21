@@ -3,58 +3,55 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Genre — WatchHentai</title>
-  <meta name="description" content="Browse hentai series by genre. Find your favorites easily.">
+  <title>Genres — WatchHentai</title>
+  <meta name="description" content="Browse hentai series by genre.">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body data-page="genre">
 
-  <!-- ── Navbar (filled by JS via /api/extra) ── -->
-  <nav class="navbar" id="mainNav">
-    <div class="navbar-inner">
-      <a href="index.html" class="navbar-brand">Watch<span>Hentai</span></a>
-      <div style="margin-left:auto"><div class="spinner-sm spinner" style="width:24px;height:24px;margin:0"></div></div>
+  <!-- Navbar -->
+  <nav id="mainNav" style="position:sticky;top:0;z-index:500;background:rgba(5,7,15,.88);backdrop-filter:blur(24px);border-bottom:1px solid rgba(255,255,255,.06)">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo">Watch<em>Hentai</em></a>
+      <div style="margin-left:auto"><div class="spin spin-sm"></div></div>
     </div>
   </nav>
 
-  <!-- ── Page Hero ── -->
-  <div class="page-hero">
-    <div class="container">
-      <h1 id="genreHeroTitle">Browse Genres</h1>
-      <p>Select a genre from the sidebar to browse series</p>
+  <!-- Page Hero -->
+  <div class="page-bar">
+    <div class="wrap page-bar-inner">
+      <h1 id="gsHeroTitle">Browse Genres</h1>
+      <p id="gsHeroSub">Select a genre to browse series</p>
     </div>
   </div>
 
-  <!-- ── Main Layout ── -->
-  <div class="container">
-    <div class="genre-layout">
-
-      <!-- Sidebar: genre list from /api/genres -->
-      <aside class="genre-sidebar">
-        <div class="genre-sidebar-title">All Genres</div>
-        <div class="genre-list" id="genreList">
-          <div class="spinner-sm spinner"></div>
-        </div>
-      </aside>
-
-      <!-- Content: series grid + pagination -->
-      <div>
-        <div class="cards-grid" id="genreGrid">
-          <div class="empty-state" style="grid-column:1/-1;padding:4rem 1rem">
-            <span class="icon">🏷️</span>
-            <p>Select a genre from the sidebar to browse series.</p>
-          </div>
-        </div>
-        <div id="genrePag"></div>
+  <!-- Layout -->
+  <div class="genre-layout">
+    <!-- Sidebar -->
+    <aside class="genre-sidebar">
+      <div class="gs-label">All Genres</div>
+      <div class="gs-list" id="gsList">
+        <div class="spin" style="width:28px;height:28px;border-width:2px;margin:1.5rem auto"></div>
       </div>
+    </aside>
 
+    <!-- Grid -->
+    <div>
+      <div class="grid lg" id="gsGrid">
+        <div class="empty" style="grid-column:1/-1;padding:4rem 1rem">
+          <span class="empty-ico">🏷️</span>
+          <p>Select a genre from the sidebar</p>
+        </div>
+      </div>
+      <div id="gsPag"></div>
     </div>
   </div>
 
-  <!-- ── Footer ── -->
+  <!-- Footer -->
   <footer class="site-footer" id="siteFooter">
-    <div class="container">
-      <p>WatchHentai.net © 2025 — All content belongs to their respective owners.</p>
+    <div class="footer-inner">
+      <div class="footer-brand">Watch<em>Hentai</em></div>
+      <p class="footer-copy">WatchHentai.net © 2025 — All content belongs to their respective owners.</p>
     </div>
   </footer>
 
