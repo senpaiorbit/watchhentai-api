@@ -4,80 +4,61 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Genre — WatchHentai</title>
-  <meta name="description" content="Browse hentai by genre.">
+  <meta name="description" content="Browse hentai series by genre. Find your favorites easily.">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body data-page="genre">
 
-  <!-- Navbar -->
-  <nav class="navbar">
+  <!-- ── Navbar (filled by JS via /api/extra) ── -->
+  <nav class="navbar" id="mainNav">
     <div class="navbar-inner">
       <a href="index.html" class="navbar-brand">Watch<span>Hentai</span></a>
-      <ul class="navbar-nav" id="navMenu">
-        <li><a href="index.html" class="nav-link">Home</a></li>
-        <li><a href="index.html?type=trending" class="nav-link">Trending</a></li>
-        <li><a href="index.html?type=videos" class="nav-link">Episodes</a></li>
-        <li><a href="genre.html?slug=uncensored" class="nav-link">Uncensored</a></li>
-        <li><a href="genre.html" class="nav-link active">Genres</a></li>
-      </ul>
-      <div class="navbar-search">
-        <form id="searchForm" style="display:flex;gap:0.5rem;">
-          <input type="text" id="searchInput" class="search-input" placeholder="Search series…" autocomplete="off">
-          <button type="submit" class="search-btn">Search</button>
-        </form>
-      </div>
-      <button class="navbar-toggle" id="navToggle" aria-label="Toggle menu">
-        <span></span><span></span><span></span>
-      </button>
+      <div style="margin-left:auto"><div class="spinner-sm spinner" style="width:24px;height:24px;margin:0"></div></div>
     </div>
   </nav>
 
-  <!-- Page Hero -->
+  <!-- ── Page Hero ── -->
   <div class="page-hero">
     <div class="container">
-      <h1 id="genreTitle">Browse Genres</h1>
-      <p>Find your favorite hentai by genre</p>
+      <h1 id="genreHeroTitle">Browse Genres</h1>
+      <p>Select a genre from the sidebar to browse series</p>
     </div>
   </div>
 
-  <!-- Content -->
+  <!-- ── Main Layout ── -->
   <div class="container">
     <div class="genre-layout">
-      <!-- Sidebar -->
+
+      <!-- Sidebar: genre list from /api/genres -->
       <aside class="genre-sidebar">
-        <h3>All Genres</h3>
+        <div class="genre-sidebar-title">All Genres</div>
         <div class="genre-list" id="genreList">
-          <!-- JS fills -->
-          <div class="loading-spinner" style="width:28px;height:28px;border-width:2px;margin:2rem auto;"></div>
+          <div class="spinner-sm spinner"></div>
         </div>
       </aside>
 
-      <!-- Grid -->
+      <!-- Content: series grid + pagination -->
       <div>
         <div class="cards-grid" id="genreGrid">
-          <div class="empty-state" style="grid-column:1/-1; padding: 4rem 1rem;">
-            <span>🏷️</span>
+          <div class="empty-state" style="grid-column:1/-1;padding:4rem 1rem">
+            <span class="icon">🏷️</span>
             <p>Select a genre from the sidebar to browse series.</p>
           </div>
         </div>
-        <div id="genrePagination"></div>
+        <div id="genrePag"></div>
       </div>
+
     </div>
   </div>
 
-  <!-- Footer -->
-  <footer class="footer">
+  <!-- ── Footer ── -->
+  <footer class="site-footer" id="siteFooter">
     <div class="container">
-      <p>WatchHentai.net — All content belongs to their respective owners.</p>
+      <p>WatchHentai.net © 2025 — All content belongs to their respective owners.</p>
     </div>
   </footer>
 
   <script src="js/config.js"></script>
   <script src="js/script.js"></script>
-  <script>
-    document.getElementById("navToggle").addEventListener("click", () => {
-      document.getElementById("navMenu").classList.toggle("open");
-    });
-  </script>
 </body>
 </html>

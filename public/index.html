@@ -1,1 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WatchHentai — Home</title>
+  <meta name="description" content="Watch hentai series and episodes online in HD quality. Browse trending, new episodes, and more.">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body data-page="index">
 
+  <!-- ── Navbar (filled by JS via /api/extra) ── -->
+  <nav class="navbar" id="mainNav">
+    <div class="navbar-inner">
+      <a href="index.html" class="navbar-brand">Watch<span>Hentai</span></a>
+      <div style="margin-left:auto"><div class="spinner-sm spinner" style="width:24px;height:24px;margin:0"></div></div>
+    </div>
+  </nav>
+
+  <!-- ── Featured Slider (home only) ── -->
+  <section class="featured-section" id="heroSection">
+    <div id="featuredSlider">
+      <div style="min-height:480px;display:flex;align-items:center;justify-content:center;">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Home Grid Sections ── -->
+  <div id="homeSections">
+    <section class="home-section">
+      <div class="container">
+        <div class="section-header">
+          <h2 class="section-title">New Episodes</h2>
+          <a href="index.html?type=videos" class="view-all">View All →</a>
+        </div>
+        <div class="cards-grid" id="newEpGrid">
+          <!-- filled by JS -->
+        </div>
+      </div>
+    </section>
+
+    <section class="home-section alt">
+      <div class="container">
+        <div class="section-header">
+          <h2 class="section-title">Trending Series</h2>
+          <a href="index.html?type=trending" class="view-all">View All →</a>
+        </div>
+        <div class="cards-grid" id="trendGrid">
+          <!-- filled by JS -->
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ── List Section (trending / videos / series) ── -->
+  <section class="d-none" id="listSection">
+    <div class="page-hero">
+      <div class="container">
+        <h1 id="listTitle">Series</h1>
+      </div>
+    </div>
+    <div class="container" style="padding-top:1.5rem">
+      <div class="cards-grid" id="listGrid"></div>
+      <div id="listPagination"></div>
+    </div>
+  </section>
+
+  <!-- ── Calendar Section ── -->
+  <section class="d-none" id="calendarSection">
+    <div class="page-hero">
+      <div class="container">
+        <h1>Release Calendar</h1>
+        <p>Upcoming and recent episode schedule</p>
+      </div>
+    </div>
+    <div class="container" style="padding-top:1.5rem" id="calendarContent">
+      <div class="spinner"></div>
+    </div>
+  </section>
+
+  <!-- ── Search Results ── -->
+  <section class="search-section container d-none" id="searchSection">
+    <h2 class="search-heading" id="searchTitle">Search Results</h2>
+    <div class="cards-grid" id="searchGrid"></div>
+    <div id="searchPag"></div>
+  </section>
+
+  <!-- ── Footer ── -->
+  <footer class="site-footer" id="siteFooter">
+    <div class="container">
+      <p>WatchHentai.net © 2025 — All content belongs to their respective owners.</p>
+    </div>
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/script.js"></script>
+</body>
+</html>

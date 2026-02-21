@@ -4,52 +4,32 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Series — WatchHentai</title>
-  <meta name="description" content="Hentai series details, episodes and more.">
+  <meta name="description" content="Hentai series details, full episode list, related series and more.">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body data-page="series">
 
-  <!-- Navbar -->
-  <nav class="navbar">
+  <!-- ── Navbar (filled by JS via /api/extra) ── -->
+  <nav class="navbar" id="mainNav">
     <div class="navbar-inner">
       <a href="index.html" class="navbar-brand">Watch<span>Hentai</span></a>
-      <ul class="navbar-nav" id="navMenu">
-        <li><a href="index.html" class="nav-link">Home</a></li>
-        <li><a href="index.html?type=trending" class="nav-link">Trending</a></li>
-        <li><a href="index.html?type=videos" class="nav-link">Episodes</a></li>
-        <li><a href="genre.html?slug=uncensored" class="nav-link">Uncensored</a></li>
-        <li><a href="genre.html" class="nav-link">Genres</a></li>
-      </ul>
-      <div class="navbar-search">
-        <form id="searchForm" style="display:flex;gap:0.5rem;">
-          <input type="text" id="searchInput" class="search-input" placeholder="Search series…" autocomplete="off">
-          <button type="submit" class="search-btn">Search</button>
-        </form>
-      </div>
-      <button class="navbar-toggle" id="navToggle" aria-label="Toggle menu">
-        <span></span><span></span><span></span>
-      </button>
+      <div style="margin-left:auto"><div class="spinner-sm spinner" style="width:24px;height:24px;margin:0"></div></div>
     </div>
   </nav>
 
-  <!-- Content injected by JS -->
+  <!-- ── Series Content (fully injected by JS) ── -->
   <div id="seriesContent">
-    <div class="loading-spinner"></div>
+    <div class="spinner"></div>
   </div>
 
-  <!-- Footer -->
-  <footer class="footer">
+  <!-- ── Footer ── -->
+  <footer class="site-footer" id="siteFooter">
     <div class="container">
-      <p>WatchHentai.net — All content belongs to their respective owners.</p>
+      <p>WatchHentai.net © 2025 — All content belongs to their respective owners.</p>
     </div>
   </footer>
 
   <script src="js/config.js"></script>
   <script src="js/script.js"></script>
-  <script>
-    document.getElementById("navToggle").addEventListener("click", () => {
-      document.getElementById("navMenu").classList.toggle("open");
-    });
-  </script>
 </body>
 </html>
