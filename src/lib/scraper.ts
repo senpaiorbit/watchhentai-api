@@ -10,8 +10,14 @@ import {
   type SliderItem,
 } from "./format";
 
-// ─── Fetch ────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// Fetch
+// ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Fetch any page — accepts both relative paths ("/series/") and full URLs.
+ * Full URLs are used when fetching embedded player pages (jwplayer iframe src).
+ */
 export async function fetchPage(path: string = "/"): Promise<string> {
   const url = path.startsWith("http") ? path : `${config.baseUrl}${path}`;
   const res = await fetch(url, {
@@ -22,11 +28,14 @@ export async function fetchPage(path: string = "/"): Promise<string> {
   return res.text();
 }
 
-// ─── Mini HTML Doc ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// HtmlDoc — lightweight DOM-like helper (regex-based)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export class HtmlDoc {
   constructor(public html: string) {}
 
+  /** Extract all top-level blocks of a given tag */
   private blocks(tag: string, html = this.html): string[] {
     const results: string[] = [];
     const openRe = new RegExp(`<${tag}(?:\\s[^>]*)?>`, "gi");
@@ -34,17 +43,24 @@ export class HtmlDoc {
     let match: RegExpExecArray | null;
     while ((match = openRe.exec(html)) !== null) {
       const start = match.index;
-      const closeIdx = html.toLowerCase().indexOf(closeTag.toLowerCase(), start + match[0].length);
-      if (closeIdx === -1) { results.push(match[0]); continue; }
+      const closeIdx = html
+        .toLowerCase()
+        .indexOf(closeTag.toLowerCase(), start + match[0].length);
+      if (closeIdx === -1) {
+        results.push(match[0]);
+        continue;
+      }
       results.push(html.slice(start, closeIdx + closeTag.length));
     }
     return results;
   }
 
+  /** All <article> blocks as HtmlDoc instances */
   articles(): HtmlDoc[] {
     return this.blocks("article").map((h) => new HtmlDoc(h));
   }
 
+  /** First value of `attribute` on the first `tag` element */
   attr(tag: string, attribute: string, html = this.html): string {
     const re = new RegExp(`<${tag}(?:\\s[^>]*)?>`, "i");
     const m = html.match(re);
@@ -54,6 +70,7 @@ export class HtmlDoc {
     return am ? am[1] : "";
   }
 
+  /** All values of `attribute` on every `tag` element */
   attrs(tag: string, attribute: string): string[] {
     const re = new RegExp(`<${tag}(?:\\s[^>]*)?>`, "gi");
     const results: string[] = [];
@@ -66,16 +83,22 @@ export class HtmlDoc {
     return results;
   }
 
+  /** Strip all tags and return clean text */
   text(html = this.html): string {
     return cleanText(html.replace(/<[^>]+>/g, " "));
   }
 
+  /** Inner text of first matching tag */
   tagText(tag: string): string {
-    const re = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "i");
+    const re = new RegExp(
+      `<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`,
+      "i"
+    );
     const m = this.html.match(re);
     return m ? this.text(m[1]) : "";
   }
 
+  /** Narrow to the element with the given id */
   byId(id: string): HtmlDoc {
     const re = new RegExp(`id=["']${id}["']`, "i");
     const idMatch = this.html.match(re);
@@ -88,16 +111,20 @@ export class HtmlDoc {
     return new HtmlDoc(blocks[0] ?? "");
   }
 
+  /** All href values */
   hrefs(): string[] {
     return this.attrs("a", "href").filter(Boolean);
   }
 
+  /** Simple string-contains check */
   contains(text: string): boolean {
     return this.html.includes(text);
   }
 }
 
-// ─── Parsers ──────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// Shared parsers
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export function parseSlider(doc: HtmlDoc): SliderItem[] {
   const sliderHtml = doc.byId("slider-movies-tvshows");
@@ -152,7 +179,10 @@ export function parseEpisodes(doc: HtmlDoc): EpisodeItem[] {
   });
 }
 
-export function parseSeriesSection(sectionHtml: string, sectionId: string): SeriesItem[] {
+export function parseSeriesSection(
+  sectionHtml: string,
+  sectionId: string
+): SeriesItem[] {
   const startRe = new RegExp(`id="${sectionId}"`, "i");
   const idx = sectionHtml.search(startRe);
   if (idx === -1) return [];
@@ -177,13 +207,15 @@ export function parseSeriesSection(sectionHtml: string, sectionId: string): Seri
   });
 }
 
-export function parseHomeSections(doc: HtmlDoc): Record<string, SeriesItem[]> {
+export function parseHomeSections(
+  doc: HtmlDoc
+): Record<string, SeriesItem[]> {
   const sectionIds = [
-    { id: "dt-tvshows", name: "featured_series" },
-    { id: "genre_uncensored", name: "uncensored" },
-    { id: "genre_harem", name: "harem" },
-    { id: "genre_school-girls", name: "school_girls" },
-    { id: "genre_large-breasts", name: "large_breasts" },
+    { id: "dt-tvshows",          name: "featured_series" },
+    { id: "genre_uncensored",    name: "uncensored"      },
+    { id: "genre_harem",         name: "harem"           },
+    { id: "genre_school-girls",  name: "school_girls"    },
+    { id: "genre_large-breasts", name: "large_breasts"   },
   ];
   const result: Record<string, SeriesItem[]> = {};
   for (const { id, name } of sectionIds) {
@@ -192,32 +224,171 @@ export function parseHomeSections(doc: HtmlDoc): Record<string, SeriesItem[]> {
   return result;
 }
 
-// ─── Scrape Functions ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// Player page scraper
+//
+// Fetches https://watchhentai.net/jwplayer/?source=...&id=...&type=...&quality=...
+// and returns all available quality sources + metadata.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface VideoSource {
+  /** Direct CDN URL */
+  src: string;
+  /** MIME type e.g. "video/mp4" */
+  type: string;
+  /** Quality label e.g. "1080p", "1440p", "720p", "default" */
+  label: string;
+}
+
+export interface PlayerPageData {
+  /** All quality sources parsed from sources[] */
+  sources: VideoSource[];
+  /** Default/fallback direct CDN URL from jw.file or schema contentUrl */
+  defaultSrc: string;
+  /** Thumbnail from jw.image or schema thumbnailUrl */
+  thumbnail: string;
+  /** ISO 8601 duration e.g. "PT24M50S" */
+  duration: string;
+  /** Download page URL */
+  downloadUrl: string;
+}
+
+/**
+ * Decode a URL-encoded + HTML-entity-encoded string.
+ */
+function cleanUrl(raw: string): string {
+  try {
+    return decodeURIComponent(raw.replace(/&amp;/g, "&"));
+  } catch (_) {
+    return raw.replace(/&amp;/g, "&");
+  }
+}
+
+/**
+ * Scrape the standalone JWPlayer page to get quality sources.
+ *
+ * The page contains:
+ *   var jw = {"file":"https://hstorage.xyz/...","image":"...","color":"..."}
+ *   sources: [
+ *     { file: "https://hstorage.xyz/..._1440p.mp4", type: "video/mp4", label: "1440p" },
+ *     { file: "https://hstorage.xyz/..._1080p.mp4", type: "video/mp4", label: "1080p" },
+ *   ]
+ *   JSON-LD: { "duration": "PT24M50S", "contentUrl": "...", "thumbnailUrl": "..." }
+ *   window.open('https://watchhentai.net/download/...')
+ */
+export async function scrapePlayerPage(
+  playerUrl: string
+): Promise<PlayerPageData> {
+  const clean = playerUrl.replace(/&amp;/g, "&");
+  const html  = await fetchPage(clean); // fetchPage handles full URLs
+
+  // ── jw{} object ───────────────────────────────────────────────────────────
+  // var jw = {"file":"https:\/\/hstorage.xyz\/...","image":"...","color":"..."}
+  let defaultSrc = "";
+  let thumbnail  = "";
+
+  const jwMatch = html.match(/var\s+jw\s*=\s*(\{[\s\S]*?\})\s*(?:<\/script>|;)/);
+  if (jwMatch) {
+    const fileM  = jwMatch[1].match(/"file"\s*:\s*"([^"]+)"/);
+    const imageM = jwMatch[1].match(/"image"\s*:\s*"([^"]+)"/);
+    if (fileM)  defaultSrc = cleanUrl(fileM[1].replace(/\\\//g, "/"));
+    if (imageM) thumbnail  = cleanUrl(imageM[1].replace(/\\\//g, "/"));
+  }
+
+  // ── JSON-LD schema ────────────────────────────────────────────────────────
+  let duration = "";
+  const schemaMatch = html.match(
+    /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i
+  );
+  if (schemaMatch) {
+    try {
+      const schema = JSON.parse(schemaMatch[1].trim());
+      if (!defaultSrc && schema.contentUrl)  defaultSrc = schema.contentUrl;
+      if (!thumbnail  && schema.thumbnailUrl) thumbnail  = schema.thumbnailUrl;
+      if (schema.duration)                   duration   = schema.duration;
+    } catch (_) {
+      // regex fallback
+      const durM  = schemaMatch[1].match(/"duration"\s*:\s*"([^"]+)"/);
+      const cuM   = schemaMatch[1].match(/"contentUrl"\s*:\s*"([^"]+)"/);
+      const thM   = schemaMatch[1].match(/"thumbnailUrl"\s*:\s*"([^"]+)"/);
+      if (durM)            duration   = durM[1];
+      if (cuM  && !defaultSrc) defaultSrc = cuM[1];
+      if (thM  && !thumbnail)  thumbnail  = thM[1];
+    }
+  }
+
+  // ── sources[] array ───────────────────────────────────────────────────────
+  // sources: [\n  { file: "...", type: "video/mp4", label: "1440p" }, ...]
+  const sources: VideoSource[] = [];
+  const sourcesBlockM = html.match(/sources\s*:\s*\[([\s\S]*?)\]/);
+  if (sourcesBlockM) {
+    // Each entry: { file: "...", type: "video/mp4", label: "1080p" }
+    const entryRe = /\{([\s\S]*?)\}/g;
+    let em: RegExpExecArray | null;
+    while ((em = entryRe.exec(sourcesBlockM[1])) !== null) {
+      const entry  = em[1];
+      const fileM  = entry.match(/["']?file["']?\s*:\s*["']([^"']+)["']/);
+      const typeM  = entry.match(/["']?type["']?\s*:\s*["']([^"']+)["']/);
+      const labelM = entry.match(/["']?label["']?\s*:\s*["']([^"']+)["']/);
+      if (fileM) {
+        sources.push({
+          src:   cleanUrl(fileM[1].replace(/\\\//g, "/")),
+          type:  typeM  ? typeM[1]  : "video/mp4",
+          label: labelM ? labelM[1] : "default",
+        });
+      }
+    }
+  }
+
+  // Fallback: if sources[] was empty, use jw.file / schema contentUrl
+  if (sources.length === 0 && defaultSrc) {
+    const labelGuess = defaultSrc.match(/_(\d+p)\./)?.[1] ?? "default";
+    sources.push({ src: defaultSrc, type: "video/mp4", label: labelGuess });
+  }
+
+  // ── download URL ──────────────────────────────────────────────────────────
+  // player.addButton(..., function() { window.open('https://watchhentai.net/download/...'); })
+  const dlM = html.match(
+    /window\.open\('(https:\/\/watchhentai\.net\/download\/[^']+)'\)/i
+  );
+  const downloadUrl = dlM ? dlM[1] : "";
+
+  return { sources, defaultSrc, thumbnail, duration, downloadUrl };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Scrape functions (high-level, used by route handlers)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export async function scrapeHome() {
   const html = await fetchPage("/");
-  const doc = new HtmlDoc(html);
+  const doc  = new HtmlDoc(html);
   return {
-    slider: parseSlider(doc),
+    slider:         parseSlider(doc),
     recentEpisodes: parseEpisodes(doc),
-    sections: parseHomeSections(doc),
+    sections:       parseHomeSections(doc),
   };
 }
 
 export async function scrapeSeries(slug: string) {
-  const html = await fetchPage(`/series/${slug}/`);
-  const doc = new HtmlDoc(html);
+  const html  = await fetchPage(`/series/${slug}/`);
+  const doc   = new HtmlDoc(html);
   const title = cleanText(doc.tagText("h1") || doc.tagText("h2"));
-  const descMatch = html.match(/<div[^>]*class="[^"]*wp-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+  const descMatch = html.match(
+    /<div[^>]*class="[^"]*wp-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i
+  );
   const description = descMatch ? doc.text(descMatch[1]) : "";
-  const posterMatch = html.match(/class="[^"]*poster[^"]*"[\s\S]*?data-src="([^"]+)"/i);
+  const posterMatch = html.match(
+    /class="[^"]*poster[^"]*"[\s\S]*?data-src="([^"]+)"/i
+  );
   const poster = posterMatch ? normalizeThumbnail(posterMatch[1]) : "";
   const epSection = new HtmlDoc(html);
-  const episodes = epSection.articles()
+  const episodes = epSection
+    .articles()
     .filter((a) => a.html.includes("episode") || a.html.includes("Episode"))
     .map((art) => ({
-      title: cleanText(art.tagText("h3")),
-      url: resolveUrl(art.attr("a", "href")),
+      title:     cleanText(art.tagText("h3")),
+      url:       resolveUrl(art.attr("a", "href")),
       thumbnail: normalizeThumbnail(art.attr("img", "data-src")),
     }));
   return { title, description, poster, episodes };
@@ -226,26 +397,26 @@ export async function scrapeSeries(slug: string) {
 export async function scrapeGenre(genre: string, page = 1) {
   const path = page > 1 ? `/genre/${genre}/page/${page}/` : `/genre/${genre}/`;
   const html = await fetchPage(path);
-  const doc = new HtmlDoc(html);
+  const doc  = new HtmlDoc(html);
   const items = doc.articles().map((art) => ({
-    id: art.attr("article", "id").replace("post-", ""),
+    id:    art.attr("article", "id").replace("post-", ""),
     title: cleanText(art.tagText("h3") || art.attr("img", "alt")),
-    url: resolveUrl(art.attr("a", "href")),
+    url:   resolveUrl(art.attr("a", "href")),
     poster: normalizeThumbnail(art.attr("img", "data-src")),
-    year: (art.html.match(/buttonyear[^>]*>.*?(\d{4})/s) ?? [])[1] ?? "",
+    year:  (art.html.match(/buttonyear[^>]*>.*?(\d{4})/s) ?? [])[1] ?? "",
   }));
   return { genre, page, items };
 }
 
 export async function scrapeSearch(query: string, page = 1) {
   const params = new URLSearchParams({ s: query });
-  const path = page > 1 ? `/page/${page}/?${params}` : `/?${params}`;
-  const html = await fetchPage(path);
-  const doc = new HtmlDoc(html);
+  const path   = page > 1 ? `/page/${page}/?${params}` : `/?${params}`;
+  const html   = await fetchPage(path);
+  const doc    = new HtmlDoc(html);
   const results = doc.articles().map((art) => ({
-    id: art.attr("article", "id").replace("post-", ""),
+    id:    art.attr("article", "id").replace("post-", ""),
     title: cleanText(art.tagText("h3") || art.attr("img", "alt")),
-    url: resolveUrl(art.attr("a", "href")),
+    url:   resolveUrl(art.attr("a", "href")),
     poster: normalizeThumbnail(art.attr("img", "data-src")),
   }));
   return { query, page, results };
@@ -253,28 +424,28 @@ export async function scrapeSearch(query: string, page = 1) {
 
 export async function scrapeTrending() {
   const html = await fetchPage("/trending/");
-  const doc = new HtmlDoc(html);
+  const doc  = new HtmlDoc(html);
   return doc.articles().map((art) => ({
-    id: art.attr("article", "id").replace("post-", ""),
+    id:    art.attr("article", "id").replace("post-", ""),
     title: cleanText(art.tagText("h3") || art.attr("img", "alt")),
-    url: resolveUrl(art.attr("a", "href")),
+    url:   resolveUrl(art.attr("a", "href")),
     poster: normalizeThumbnail(art.attr("img", "data-src")),
-    year: (art.html.match(/buttonyear[^>]*>.*?(\d{4})/s) ?? [])[1] ?? "",
+    year:  (art.html.match(/buttonyear[^>]*>.*?(\d{4})/s) ?? [])[1] ?? "",
   }));
 }
 
 export async function scrapeGenreList() {
-  const html = await fetchPage("/");
+  const html    = await fetchPage("/");
   const navMatch = html.match(/<ul[^>]*class="sub-menu"[^>]*>([\s\S]*?)<\/ul>/i);
   if (!navMatch) return [];
-  const doc = new HtmlDoc(navMatch[1]);
-  const links = doc.hrefs();
+  const doc    = new HtmlDoc(navMatch[1]);
+  const links  = doc.hrefs();
   const titles = doc.attrs("a", "title");
-  const texts = navMatch[1].match(/<a[^>]*>([^<]+)<\/a>/gi) ?? [];
+  const texts  = navMatch[1].match(/<a[^>]*>([^<]+)<\/a>/gi) ?? [];
   return links.map((href, i) => ({
-    name: cleanText(texts[i]?.replace(/<[^>]+>/g, "") ?? ""),
+    name:  cleanText(texts[i]?.replace(/<[^>]+>/g, "") ?? ""),
     title: cleanText(titles[i] ?? ""),
-    slug: href.replace(/.*\/genre\//, "").replace(/\/$/, ""),
-    url: resolveUrl(href),
+    slug:  href.replace(/.*\/genre\//, "").replace(/\/$/, ""),
+    url:   resolveUrl(href),
   }));
 }
