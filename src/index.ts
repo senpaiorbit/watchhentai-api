@@ -10,6 +10,7 @@ import uncensored from "./api/pages/uncensored";
 import release from "./api/pages/release";
 import calendar from "./api/pages/calendar";
 import search from "./api/pages/search";
+import series from "./api/pages/series";
 import { scrapeGenreList, scrapeSearch, scrapeSeries } from "./lib/scraper";
 
 const app = new Hono().basePath("/api");
@@ -72,7 +73,13 @@ app.get("/genres", async (c) => {
 // GET /api/genre/:slug/:page
 app.route("/genre", genre);
 
-// ─── Series ───────────────────────────────────────────────────────────────────
+// ─── Series List ──────────────────────────────────────────────────────────────
+// GET /api/series           → page 1 (all series)
+// GET /api/series?page=N    → page N
+// GET /api/series/:page     → page N  (numeric only, handled inside router)
+app.route("/series", series);
+
+// ─── Series Detail ────────────────────────────────────────────────────────────
 // GET /api/series/:slug
 app.get("/series/:slug", async (c) => {
   const slug = c.req.param("slug");
@@ -130,6 +137,9 @@ app.notFound((c) =>
         "GET /api/genre/:slug",
         "GET /api/genre/:slug?page=N",
         "GET /api/genre/:slug/:page",
+        "GET /api/series",
+        "GET /api/series?page=N",
+        "GET /api/series/:page",
         "GET /api/series/:slug",
         "GET /api/search?q=:query&page=1",
         "GET /api/health",
