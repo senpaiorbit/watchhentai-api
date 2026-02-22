@@ -123,22 +123,22 @@ export class HtmlDoc {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Shared parsers
+// Helpers
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Unwrap a timthumb URL to get the real underlying image URL.
+ * Unwrap a timthumb/PHP resizer URL to the real underlying CDN URL.
  *
- * The site wraps CDN images through PHP resizers:
+ * Handles all variants used by the site:
  *   /timthumb/backdrop.php?src=https://watchhentai.net/uploads/.../backdrop1.jpg
  *   /timthumb/thumb.php?src=https://watchhentai.net/uploads/.../poster.jpg
  *   /timthumb/sidebar.php?src=https://watchhentai.net/uploads/.../poster.jpg
  *
- * We extract the `src=` query param value and decode it.
- * If there is no `src=` param the URL is returned as-is.
+ * Returns the decoded src= value, or the original string if no src= param found.
  */
 function unwrapTimthumb(raw: string): string {
   if (!raw) return "";
+  // Match ?src= or &src= (case-insensitive, handles URL-encoded values too)
   const m = raw.match(/[?&]src=([^&]+)/i);
   if (!m) return raw;
   try {
@@ -149,83 +149,200 @@ function unwrapTimthumb(raw: string): string {
 }
 
 /**
- * Parse the home-page slider (#slider-movies-tvshows).
+ * Extract the real image URL from a lazy-loaded <img> tag string.
  *
- * BUG THAT WAS FIXED:
- *   The site lazy-loads images:
- *     <img data-lazyloaded="1"
- *          src="data:image/gif;base64,..."   ← 1×1 placeholder — NOT the real image
- *          data-src="https://watchhentai.net/timthumb/backdrop.php?src=REAL_URL"
- *          alt="Title" title="Title"/>
- *
- *   The previous code called  art.attr("img", "data-src")  which is correct for
- *   the attribute name, BUT the attr() helper internally runs:
- *       html.match(/<img(?:\s[^>]*)?>/)   ← captures the whole opening <img> tag
- *   then searches that captured string for  data-src=["']...["'].
- *
- *   The captured opening tag is (from the actual HTML):
- *       <img data-lazyloaded="1" src="data:image/gif;base64,..." data-src="https://...">
- *   Searching for  /data-src=["']([^"']*?)["']/  should work in theory, BUT
- *   the regex is NOT anchored and `data-src` also matches the `data-` in
- *   `data-lazyloaded` if the regex engine backtracks differently.  More
- *   importantly, normalizeThumbnail() was receiving the full timthumb URL
- *   (e.g. "https://watchhentai.net/timthumb/backdrop.php?src=REAL") and if
- *   that function only handled "thumb.php" it silently returned the timthumb
- *   URL unchanged — which doesn't load in a browser without a valid referer.
- *
- *   FIX:
- *   1. Use a dedicated regex  /\bdata-src=["']([^"']+)["']/i  on the full
- *      article HTML (not just the first <img> tag) to extract data-src reliably.
- *   2. Call unwrapTimthumb() to strip the backdrop.php/thumb.php/sidebar.php
- *      wrapper and return the raw CDN URL every time.
+ * The site uses:  <img data-lazyloaded="1" src="data:..." data-src="REAL_URL">
+ * We always want data-src, never src (which is a placeholder gif).
+ * Then we unwrap any timthumb PHP wrapper.
  */
-export function parseSlider(doc: HtmlDoc): SliderItem[] {
-  // Try byId first; fall back to raw substring search if the id isn't found
-  // (some minified pages may use different quote styles).
-  let sliderHtml = doc.byId("slider-movies-tvshows").html;
-  if (!sliderHtml) {
-    const idx = doc.html.indexOf("slider-movies-tvshows");
-    if (idx === -1) return [];
-    sliderHtml = doc.html.slice(doc.html.lastIndexOf("<", idx));
+function extractImgUrl(imgTagOrHtml: string): string {
+  // Prefer data-src (lazy-loaded real URL)
+  const dataSrcM = imgTagOrHtml.match(/\bdata-src=["']([^"']+)["']/i);
+  if (dataSrcM) return unwrapTimthumb(dataSrcM[1]);
+
+  // Fall back to src only if it's not a base64 placeholder
+  const srcM = imgTagOrHtml.match(/\bsrc=["']([^"']+)["']/i);
+  if (srcM && !srcM[1].startsWith("data:")) return unwrapTimthumb(srcM[1]);
+
+  return "";
+}
+
+/**
+ * Extract all <article>...</article> blocks from a raw HTML string.
+ *
+ * Unlike HtmlDoc.articles() / blocks(), this is nesting-aware for <article>:
+ * it tracks open/close tags so deeply-nested elements don't cause early
+ * termination. Articles themselves don't nest so a simple indexOf scan works,
+ * but we also guard against runaway matches.
+ */
+function extractArticles(html: string): string[] {
+  const results: string[] = [];
+  const openTag = "<article";
+  const closeTag = "</article>";
+  let pos = 0;
+
+  while (pos < html.length) {
+    const start = html.toLowerCase().indexOf(openTag.toLowerCase(), pos);
+    if (start === -1) break;
+
+    const end = html.toLowerCase().indexOf(closeTag.toLowerCase(), start);
+    if (end === -1) break;
+
+    results.push(html.slice(start, end + closeTag.length));
+    pos = end + closeTag.length;
   }
 
-  const sliderDoc = new HtmlDoc(sliderHtml);
+  return results;
+}
 
-  return sliderDoc.articles().map((art) => {
-    // Post ID
-    const id = art.attr("article", "id").replace("post-", "");
+/**
+ * Extract the HTML content between two string markers (inclusive of outer wrapper).
+ *
+ * Used instead of byId() because byId() relies on blocks() which is NOT
+ * nesting-aware for <div> — it finds the FIRST </div> after the opening tag,
+ * not the matching one. Since slider/section divs contain many nested divs,
+ * byId() returns a truncated fragment that contains zero articles.
+ *
+ * Strategy: find the opening marker (e.g. `id="slider-movies-tvshows"`),
+ * then capture everything up to but not including the next section boundary
+ * (e.g. `<header` or another known landmark tag).
+ */
+function extractSectionByIdToNextHeader(
+  html: string,
+  id: string
+): string {
+  // Find where this id attribute appears
+  const idPattern = new RegExp(`id=["']${id}["']`, "i");
+  const idMatch = html.match(idPattern);
+  if (!idMatch || idMatch.index === undefined) return "";
 
-    // Series URL — first <a> href in the article
-    const href = art.attr("a", "href");
+  // Walk back to find the opening tag of this element
+  const openStart = html.lastIndexOf("<", idMatch.index);
+  if (openStart === -1) return "";
 
-    // Title — prefer <h3> inner text, fall back to img[alt]
-    let title = art.tagText("h3");
+  // Slice from the opening tag forward
+  const fromHere = html.slice(openStart);
+
+  // Find the end boundary: the next <header or next section with another id=""
+  // For the slider, the section ends at the first <header> after it.
+  // We use a generous boundary so we don't cut off mid-article.
+  const endPatterns = [
+    /<header[\s>]/i,
+    /<div[^>]+class="[^"]*animation-2[^"]*"/i,
+  ];
+
+  let endIdx = fromHere.length;
+  for (const pat of endPatterns) {
+    const m = fromHere.match(pat);
+    if (m && m.index !== undefined && m.index > 0 && m.index < endIdx) {
+      endIdx = m.index;
+    }
+  }
+
+  return fromHere.slice(0, endIdx);
+}
+
+/**
+ * Extract a named section that starts at `id="sectionId"` and ends before
+ * the next section marker.
+ *
+ * For home page genre sections like dt-tvshows, genre_uncensored etc.
+ * The end boundary is either the next <header> or the next id= attribute
+ * that looks like another section.
+ */
+function extractSectionById(html: string, id: string): string {
+  const idPattern = new RegExp(`id=["']${id}["']`, "i");
+  const idMatch = html.match(idPattern);
+  if (!idMatch || idMatch.index === undefined) return "";
+
+  const openStart = html.lastIndexOf("<", idMatch.index);
+  if (openStart === -1) return "";
+
+  const fromHere = html.slice(openStart);
+
+  // End at next <header or next known section container
+  const endM = fromHere.match(/<header[\s>]/i);
+  const endIdx = endM && endM.index ? endM.index : fromHere.length;
+
+  return fromHere.slice(0, endIdx);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Shared parsers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Parse the home-page slider (#slider-movies-tvshows).
+ *
+ * ROOT CAUSE OF EMPTY RESULTS:
+ *   byId() uses blocks("div", ...) to find the enclosing div. blocks() is NOT
+ *   nesting-aware — it finds the FIRST </div> after the opening <div ...>, which
+ *   is the closing tag of the FIRST nested child div inside the article. So the
+ *   returned HtmlDoc contains only a partial fragment with zero <article> tags.
+ *
+ * FIX:
+ *   1. Use extractSectionByIdToNextHeader() to grab everything from the slider
+ *      opening tag up to the first <header> that follows it. This range always
+ *      contains all the slider <article> blocks.
+ *   2. Use extractArticles() (simple indexOf scan) instead of blocks("article")
+ *      since articles don't nest and indexOf is reliable here.
+ *   3. For each article, extract fields directly via regex on the raw HTML:
+ *      - data-src (not src) for the image → unwrap timthumb
+ *      - first href for the series URL
+ *      - <h3 ...> inner text for the title (with class="title" support)
+ *      - <span> text for the year/date label
+ */
+export function parseSlider(doc: HtmlDoc): SliderItem[] {
+  // Get the slider HTML section without relying on nesting-aware block parsing
+  const sliderSection = extractSectionByIdToNextHeader(
+    doc.html,
+    "slider-movies-tvshows"
+  );
+
+  if (!sliderSection) return [];
+
+  // Extract all <article> blocks within this section
+  const articleBlocks = extractArticles(sliderSection);
+
+  return articleBlocks.map((artHtml) => {
+    // Post ID from article[id="post-XXXXX"]
+    const idM = artHtml.match(/\bid=["']post-(\d+)["']/i);
+    const id = idM ? idM[1] : "";
+
+    // Series URL — first <a href="..."> in the article
+    const hrefM = artHtml.match(/<a\s[^>]*\bhref=["']([^"']+)["']/i);
+    const href = hrefM ? hrefM[1] : "";
+
+    // Title — <h3 ...>TEXT</h3>  (may have class="title")
+    const h3M = artHtml.match(/<h3(?:\s[^>]*)?>([^<]+)<\/h3>/i);
+    let title = h3M ? cleanText(h3M[1]) : "";
+
+    // Fall back to img[alt] if h3 is empty
     if (!title) {
-      const altM = art.html.match(/\balt=["']([^"']+)["']/i);
-      title = altM ? altM[1] : "";
+      const altM = artHtml.match(/\balt=["']([^"']+)["']/i);
+      title = altM ? cleanText(altM[1]) : "";
     }
 
-    // ── KEY FIX: extract data-src directly from the raw article HTML ────────
-    // Do NOT use art.attr("img", "data-src") because attr() only inspects the
-    // opening <img> tag string and the attribute order matters for some regex
-    // engines.  A direct search on the full article HTML is safer and simpler.
-    const dataSrcM = art.html.match(/\bdata-src=["']([^"']+)["']/i);
-    const rawDataSrc = dataSrcM ? dataSrcM[1] : "";
+    // Fall back to img[title] attribute
+    if (!title) {
+      const titleAttrM = artHtml.match(/\btitle=["']([^"']+)["']/i);
+      title = titleAttrM ? cleanText(titleAttrM[1]) : "";
+    }
 
-    // Strip the timthumb PHP wrapper to get the real CDN URL.
-    // e.g. "https://watchhentai.net/timthumb/backdrop.php?src=https://watchhentai.net/uploads/.../backdrop1.jpg"
-    //   →  "https://watchhentai.net/uploads/.../backdrop1.jpg"
-    const backdrop = unwrapTimthumb(rawDataSrc);
+    // Backdrop image — always use data-src (never src which is a placeholder gif)
+    // then unwrap the timthumb URL to get the real CDN URL
+    const backdrop = extractImgUrl(artHtml);
 
-    // Year / date label — the <span> inside <div class="data">
-    const year = art.tagText("span");
+    // Year/date — <span>TEXT</span> inside the .data div
+    const spanM = artHtml.match(/<span[^>]*>([^<]+)<\/span>/i);
+    const year = spanM ? cleanText(spanM[1]) : "";
 
     return {
       id,
-      title: cleanText(title),
+      title,
       url: resolveUrl(href),
       backdrop,
-      year: cleanText(year),
+      year,
     };
   });
 }
@@ -269,7 +386,7 @@ export function parseSeriesSection(
   sectionHtml: string,
   sectionId: string
 ): SeriesItem[] {
-  const startRe = new RegExp(`id="${sectionId}"`, "i");
+  const startRe = new RegExp(`id=["']${sectionId}["']`, "i");
   const idx = sectionHtml.search(startRe);
   if (idx === -1) return [];
   const fromHere = sectionHtml.slice(idx);
@@ -312,36 +429,22 @@ export function parseHomeSections(
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Player page scraper
-//
-// Fetches https://watchhentai.net/jwplayer/?source=...&id=...&type=...&quality=...
-// and returns all available quality sources + metadata.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface VideoSource {
-  /** Direct CDN URL */
   src: string;
-  /** MIME type e.g. "video/mp4" */
   type: string;
-  /** Quality label e.g. "1080p", "1440p", "720p", "default" */
   label: string;
 }
 
 export interface PlayerPageData {
-  /** All quality sources parsed from sources[] */
   sources: VideoSource[];
-  /** Default/fallback direct CDN URL from jw.file or schema contentUrl */
   defaultSrc: string;
-  /** Thumbnail from jw.image or schema thumbnailUrl */
   thumbnail: string;
-  /** ISO 8601 duration e.g. "PT24M50S" */
   duration: string;
-  /** Download page URL */
   downloadUrl: string;
 }
 
-/**
- * Decode a URL-encoded + HTML-entity-encoded string.
- */
 function cleanUrl(raw: string): string {
   try {
     return decodeURIComponent(raw.replace(/&amp;/g, "&"));
@@ -350,25 +453,12 @@ function cleanUrl(raw: string): string {
   }
 }
 
-/**
- * Scrape the standalone JWPlayer page to get quality sources.
- *
- * The page contains:
- *   var jw = {"file":"https://hstorage.xyz/...","image":"...","color":"..."}
- *   sources: [
- *     { file: "https://hstorage.xyz/..._1440p.mp4", type: "video/mp4", label: "1440p" },
- *     { file: "https://hstorage.xyz/..._1080p.mp4", type: "video/mp4", label: "1080p" },
- *   ]
- *   JSON-LD: { "duration": "PT24M50S", "contentUrl": "...", "thumbnailUrl": "..." }
- *   window.open('https://watchhentai.net/download/...')
- */
 export async function scrapePlayerPage(
   playerUrl: string
 ): Promise<PlayerPageData> {
   const clean = playerUrl.replace(/&amp;/g, "&");
   const html  = await fetchPage(clean);
 
-  // ── jw{} object ───────────────────────────────────────────────────────────
   let defaultSrc = "";
   let thumbnail  = "";
 
@@ -380,7 +470,6 @@ export async function scrapePlayerPage(
     if (imageM) thumbnail  = cleanUrl(imageM[1].replace(/\\\//g, "/"));
   }
 
-  // ── JSON-LD schema ────────────────────────────────────────────────────────
   let duration = "";
   const schemaMatch = html.match(
     /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i
@@ -401,7 +490,6 @@ export async function scrapePlayerPage(
     }
   }
 
-  // ── sources[] array ───────────────────────────────────────────────────────
   const sources: VideoSource[] = [];
   const sourcesBlockM = html.match(/sources\s*:\s*\[([\s\S]*?)\]/);
   if (sourcesBlockM) {
@@ -427,7 +515,6 @@ export async function scrapePlayerPage(
     sources.push({ src: defaultSrc, type: "video/mp4", label: labelGuess });
   }
 
-  // ── download URL ──────────────────────────────────────────────────────────
   const dlM = html.match(
     /window\.open\('(https:\/\/watchhentai\.net\/download\/[^']+)'\)/i
   );
@@ -437,7 +524,7 @@ export async function scrapePlayerPage(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Scrape functions (high-level, used by route handlers)
+// High-level scrape functions
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export async function scrapeHome() {
