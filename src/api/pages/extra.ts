@@ -9,13 +9,9 @@ const extra = new Hono();
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface SiteGenre {
-  /** Display name e.g. "Large Breasts" */
   name:  string;
-  /** URL slug e.g. "large-breasts" */
   slug:  string;
-  /** Full URL */
   url:   string;
-  /** Series count shown next to genre (0 if not present) */
   count: number;
 }
 
@@ -23,7 +19,6 @@ export interface MenuGenre {
   name:  string;
   slug:  string;
   url:   string;
-  /** title attribute value (often "<Name> Hentai") */
   title: string;
 }
 
@@ -43,53 +38,117 @@ export interface SidebarSeriesItem {
 }
 
 export interface SiteExtraData {
-  // ── Branding ────────────────────────────────────────────────────────────────
   logo: {
-    /** Absolute URL to the SVG/PNG logo */
-    url:    string;
-    /** Alt / title text */
-    alt:    string;
-    /** Site home URL */
+    url:     string;
+    alt:     string;
     homeUrl: string;
   };
-
-  // ── Navigation ────────────────────────────────────────────────────────────
-  /** Top-level nav menu items (Home, Trending, Series, Episodes, Uncensored…) */
-  menu: MenuItem[];
-
-  /** Genres listed in the Series dropdown submenu (quick-access genres) */
-  menuGenres: MenuGenre[];
-
-  // ── Sidebar ───────────────────────────────────────────────────────────────
-  /** Popular series tab (by view count) */
-  popular: SidebarSeriesItem[];
-
-  /** New/recently added series tab */
-  newSeries: SidebarSeriesItem[];
-
-  // ── Full genre list ───────────────────────────────────────────────────────
-  /**
-   * Complete genre list from the sidebar .dt_mainmeta nav.genres section.
-   * Includes all genres with their series counts.
-   */
-  genres: SiteGenre[];
-
-  // ── Release years ─────────────────────────────────────────────────────────
-  /**
-   * All release years from the sidebar .dt_mainmeta nav.releases section,
-   * in descending order (newest first).
-   */
-  years: string[];
-
-  // ── Footer ────────────────────────────────────────────────────────────────
-  /** Partner / friend site links from the footer */
+  menu:         MenuItem[];
+  menuGenres:   MenuGenre[];
+  popular:      SidebarSeriesItem[];
+  newSeries:    SidebarSeriesItem[];
+  genres:       SiteGenre[];
+  years:        string[];
   partnerLinks: { name: string; url: string }[];
+  footerLinks:  { name: string; url: string }[];
+  copyright:    string;
+}
 
-  /** Footer nav links */
-  footerLinks: { name: string; url: string }[];
+// ═══════════════════════════════════════════════════════════════════════════════
+// Low-level helpers
+// ═══════════════════════════════════════════════════════════════════════════════
 
-  /** Copyright text e.g. "WatchHentai.net © 2025" */
-  copyright: string;
+/**
+ * Extract every <article>...</article> block from a raw HTML string.
+ * Uses simple indexOf scanning — articles never nest so this is reliable.
+ */
+function extractArticles(html: string): string[] {
+  const results: string[] = [];
+  const OPEN  = "<article";
+  const CLOSE = "</article>";
+  let pos = 0;
+  while (pos < html.length) {
+    const start = html.toLowerCase().indexOf(OPEN.toLowerCase(), pos);
+    if (start === -1) break;
+    const end = html.toLowerCase().indexOf(CLOSE.toLowerCase(), start);
+    if (end === -1) break;
+    results.push(html.slice(start, end + CLOSE.length));
+    pos = end + CLOSE.length;
+  }
+  return results;
+}
+
+/**
+ * Unwrap a timthumb PHP resizer URL to the real CDN URL.
+ *   /timthumb/sidebar.php?src=https://...  →  https://...
+ */
+function unwrapTimthumb(raw: string): string {
+  if (!raw) return "";
+  const m = raw.match(/[?&]src=([^&]+)/i);
+  if (!m) return raw;
+  try { return decodeURIComponent(m[1]); } catch (_) { return m[1]; }
+}
+
+/**
+ * Extract HTML between two string markers (startMarker inclusive, up to endMarker).
+ * Returns "" if either marker is not found.
+ */
+function sliceBetween(html: string, startMarker: string, endMarker: string): string {
+  const si = html.indexOf(startMarker);
+  if (si === -1) return "";
+  const ei = html.indexOf(endMarker, si + startMarker.length);
+  if (ei === -1) return html.slice(si);
+  return html.slice(si, ei + endMarker.length);
+}
+
+/**
+ * Parse sidebar series articles (popular / new sections).
+ *
+ * ROOT CAUSE OF EMPTY RESULTS:
+ *   The old regex  /<div id="popular"[^>]*>([\s\S]*?)<\/div>\s*<div id="new"/i
+ *   is lazy (*?) so it stops at the FIRST </div> inside the section — which is
+ *   the closing tag of  <div class="image">  inside the first <article>.
+ *   Result: captured HTML contains zero articles.
+ *
+ * FIX:
+ *   Use extractArticles() (simple indexOf scan between known unique boundaries)
+ *   instead of a lazy regex that breaks on nested elements.
+ */
+function parseSidebarSection(sectionHtml: string): SidebarSeriesItem[] {
+  const items: SidebarSeriesItem[] = [];
+  for (const artHtml of extractArticles(sectionHtml)) {
+    // id
+    const idM = artHtml.match(/\bid=["']post-(\d+)["']/i);
+    const id  = idM ? idM[1] : "";
+
+    // url — first <a href>
+    const hrefM = artHtml.match(/<a\s[^>]*\bhref=["']([^"']+)["']/i);
+    const url   = hrefM ? resolveUrl(hrefM[1]) : "";
+    if (!url) continue;
+
+    // poster — data-src (lazy-loaded), unwrap timthumb
+    const dataSrcM = artHtml.match(/\bdata-src=["']([^"']+)["']/i);
+    const poster   = dataSrcM ? unwrapTimthumb(dataSrcM[1]) : "";
+
+    // title — <h3>
+    const h3M  = artHtml.match(/<h3[^>]*>([^<]+)<\/h3>/i);
+    let title  = h3M ? cleanText(h3M[1]) : "";
+    if (!title) {
+      const altM = artHtml.match(/\balt=["']([^"']+)["']/i);
+      title = altM ? cleanText(altM[1]) : "";
+    }
+
+    // rating — <b>7.5</b>
+    const ratingM = artHtml.match(/<b[^>]*>([^<]+)<\/b>/i);
+    const rating  = ratingM ? cleanText(ratingM[1]) : "";
+
+    // year — <span class="year">2020</span>
+    const yearM = artHtml.match(/<span[^>]*class="[^"]*year[^"]*"[^>]*>([^<]*)<\/span>/i);
+    const year  = yearM ? cleanText(yearM[1]) : "";
+
+    items.push({ id, title, url, poster, rating, year });
+  }
+  return items;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -97,33 +156,33 @@ export interface SiteExtraData {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function parseSiteExtra(html: string): SiteExtraData {
-  const doc = new HtmlDoc(html);
 
   // ── Logo ──────────────────────────────────────────────────────────────────
   // <div class="logo"><a href="https://watchhentai.net">
-  //   <img src='https://watchhentai.net/logo.svg' width='123px' height='50px' title='Watch Hentai' alt='Watch Hentai'/>
+  //   <img src='https://watchhentai.net/logo.svg' ... title='Watch Hentai' alt='Watch Hentai'/>
   // </a></div>
-  const logoBlockM = html.match(/<div class="logo">\s*<a href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*<\/div>/i);
-  let logoUrl    = "";
-  let logoAlt    = "";
-  let logoHome   = "";
+  let logoUrl  = "";
+  let logoAlt  = "";
+  let logoHome = "";
+  const logoBlockM = html.match(
+    /<div class="logo">\s*<a href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*<\/div>/i
+  );
   if (logoBlockM) {
     logoHome = logoBlockM[1];
-    const imgM = logoBlockM[2].match(/src='([^']+)'/i) ?? logoBlockM[2].match(/src="([^"]+)"/i);
-    const altM = logoBlockM[2].match(/alt='([^']+)'/i) ?? logoBlockM[2].match(/alt="([^"]+)"/i);
+    const imgM = logoBlockM[2].match(/src='([^']+)'/i)
+              ?? logoBlockM[2].match(/src="([^"]+)"/i);
+    const altM = logoBlockM[2].match(/alt='([^']+)'/i)
+              ?? logoBlockM[2].match(/alt="([^"]+)"/i);
     if (imgM) logoUrl = imgM[1];
     if (altM) logoAlt = altM[1];
   }
 
   // ── Main nav menu ─────────────────────────────────────────────────────────
-  // <ul id="main_header" class="main-header">
-  //   <li ...><a href="..." title="..."><i ...></i> Home</a></li>
-  //   ...
-  //   <li class="genres ..."><a href="/series/" title="...">Series</a>
-  //     <ul class="sub-menu">...</ul>
-  //   </li>
-  // </ul>
-  const menu: MenuItem[] = [];
+  // The desktop nav lives inside:
+  //   <ul id="main_header" class="main-header">…</ul>
+  // which is inside <div class="menu-header-container"> → </div>
+  // We extract the block between the unique id and the closing </div> of its parent.
+  const menu:       MenuItem[]  = [];
   const menuGenres: MenuGenre[] = [];
 
   const mainHeaderM = html.match(
@@ -132,7 +191,7 @@ function parseSiteExtra(html: string): SiteExtraData {
   if (mainHeaderM) {
     const menuHtml = mainHeaderM[1];
 
-    // Top-level <li> items — extract just the first <a> of each <li>
+    // Top-level <li> items
     const topLiRe = /<li[^>]*class="[^"]*menu-item[^"]*"[^>]*>\s*\n?<a href="([^"]+)"[^>]*(?:title="([^"]*)")?[^>]*>([\s\S]*?)<\/a>/gi;
     let liM: RegExpExecArray | null;
     while ((liM = topLiRe.exec(menuHtml)) !== null) {
@@ -146,7 +205,7 @@ function parseSiteExtra(html: string): SiteExtraData {
       }
     }
 
-    // Sub-menu genres (inside the <ul class="sub-menu"> of the Series <li>)
+    // Sub-menu genres
     const subMenuM = menuHtml.match(/<ul class="sub-menu">([\s\S]*?)<\/ul>/i);
     if (subMenuM) {
       const subRe = /<a href="([^"]+)" title="([^"]*)"[^>]*>([^<]+)<\/a>/gi;
@@ -161,50 +220,93 @@ function parseSiteExtra(html: string): SiteExtraData {
   }
 
   // ── Sidebar: Popular & New tabs ───────────────────────────────────────────
-  // <div id="popular" class="dtw_content dt_views_count">
-  //   <article class="w_item_b" id="post-XXXX">
-  //     <a href="..." title="..."><div class="image"><img data-src="..." alt="..." /></div>
-  //     <div class="data"><h3>Title</h3><div class="wextra"><b>7.5</b><span class="year">2020</span></div></div></a>
-  //   </article>
-  // </div>
+  //
+  // HTML structure (actual, from real page):
+  //
+  //   <aside id="dtw_content_views-2" class="widget doothemes_widget">
+  //     <div id="popular" class="dtw_content dt_views_count">
+  //       <article class="w_item_b" id="post-1014"> ... </article>
+  //       ... (10 articles)
+  //     </div>
+  //     <div id="new" style="display: none;" class="dtw_content dt_views_count">
+  //       <article class="w_item_b" id="post-60827"> ... </article>
+  //       ... (10 articles)
+  //     </div>
+  //   </aside>
+  //
+  // ROOT CAUSE: old code used a lazy regex  /<div id="popular"[^>]*>([\s\S]*?)<\/div>/
+  // which stops at the FIRST </div> encountered — that's the closing </div> of
+  // <div class="image"> inside the very first <article>. Zero articles captured.
+  //
+  // FIX: Use sliceBetween() with unique string anchors to get the full section,
+  // then extractArticles() to pull out each <article>...</article> block.
 
-  function parseSidebarSection(sectionHtml: string): SidebarSeriesItem[] {
-    const items: SidebarSeriesItem[] = [];
-    const artDoc = new HtmlDoc(sectionHtml);
-    artDoc.articles().forEach((art) => {
-      const id     = art.attr("article", "id").replace("post-", "");
-      const url    = resolveUrl(art.attr("a", "href"));
-      const poster = art.attr("img", "data-src");
-      const title  = cleanText(art.tagText("h3") || art.attr("img", "alt"));
-      const rating = cleanText(art.tagText("b"));
-      const year   = cleanText(art.tagText("span"));
-      if (url) items.push({ id, title, url, poster, rating, year });
-    });
-    return items;
-  }
+  // Popular: from '<div id="popular"' up to (but not including) '<div id="new"'
+  const popularSection = sliceBetween(html, '<div id="popular"', '<div id="new"');
+  const popular = parseSidebarSection(popularSection);
 
-  const popularBlockM = html.match(/<div id="popular"[^>]*>([\s\S]*?)<\/div>\s*<div id="new"/i);
-  const popular = popularBlockM ? parseSidebarSection(popularBlockM[1]) : [];
-
-  const newBlockM = html.match(/<div id="new"[^>]*>([\s\S]*?)<\/div>\s*<\/aside>/i);
-  const newSeries = newBlockM ? parseSidebarSection(newBlockM[1]) : [];
+  // New: from '<div id="new"' up to '</aside>'
+  const newSection = sliceBetween(html, '<div id="new"', "</aside>");
+  const newSeries = parseSidebarSection(newSection);
 
   // ── Full genre list ───────────────────────────────────────────────────────
-  // <nav class="genres"><h2 class="widget-title">Genres</h2>
-  //   <ul class="genres scrolling">
-  //     <li class="cat-item cat-item-297"><a href=".../genre/3d/">3D</a> <i>40</i></li>
-  //     ...
-  //   </ul>
-  // </nav>
+  //
+  // HTML structure (actual):
+  //   <div class="dt_mainmeta">
+  //     <nav class="genres">
+  //       <h2 class="widget-title">Genres</h2>
+  //       <ul class="genres scrolling">
+  //         <li class="cat-item cat-item-297">
+  //           <a href="https://watchhentai.net/genre/3d/">3D</a>
+  //           <i>40</i>
+  //         </li>
+  //         ...
+  //       </ul>
+  //     </nav>
+  //   </div>
+  //
+  // ROOT CAUSE: old regex  /<nav class="genres">([\s\S]*?)<\/nav>/i  uses lazy *?
+  // which stops at the first </nav>. But between the opening <nav> tag and the
+  // real </nav> there are many nested elements whose closing tags don't include
+  // </nav>, so actually the match is correct here — BUT the actual page has TWO
+  // <div class="dt_mainmeta"> blocks: one for genres, one for releases.  The
+  // issue is that some builds of the regex engine may match the wrong one, or
+  // the <ul class="genres scrolling"> content is so long that the lazy match
+  // terminates prematurely on a false positive somewhere inside.
+  //
+  // FIX: Extract the genres <ul> content using a two-step approach:
+  //   1. Find the unique '<ul class="genres scrolling">' open tag.
+  //   2. Scan forward counting <ul>/<ul> pairs to find the matching </ul>.
+  //      Then run the per-<li> regex on that bounded content.
+
   const genres: SiteGenre[] = [];
-  const genreNavM = html.match(
-    /<nav class="genres">([\s\S]*?)<\/nav>/i
-  );
-  if (genreNavM) {
-    const genreRe =
-      /<li[^>]*class="cat-item[^"]*"[^>]*>\s*<a href="([^"]+)"[^>]*>([^<]+)<\/a>\s*(?:<i>(\d+)<\/i>)?/gi;
+
+  // Step 1: find genre ul start
+  const genreUlMarker = '<ul class="genres scrolling">';
+  const genreUlStart  = html.indexOf(genreUlMarker);
+  if (genreUlStart !== -1) {
+    // Step 2: find matching </ul> by counting nesting
+    let depth = 1;
+    let pos   = genreUlStart + genreUlMarker.length;
+    while (pos < html.length && depth > 0) {
+      const nextOpen  = html.toLowerCase().indexOf("<ul", pos);
+      const nextClose = html.toLowerCase().indexOf("</ul>", pos);
+      if (nextClose === -1) break;
+      if (nextOpen !== -1 && nextOpen < nextClose) {
+        depth++;
+        pos = nextOpen + 3;
+      } else {
+        depth--;
+        if (depth > 0) pos = nextClose + 5;
+        else pos = nextClose; // we'll slice up to here
+      }
+    }
+    const genreUlHtml = html.slice(genreUlStart + genreUlMarker.length, pos);
+
+    // Parse each <li class="cat-item ..."> entry
+    const genreRe = /<li[^>]*class="cat-item[^"]*"[^>]*>\s*<a href="([^"]+)"[^>]*>([^<]+)<\/a>\s*(?:<i>(\d+)<\/i>)?/gi;
     let gm: RegExpExecArray | null;
-    while ((gm = genreRe.exec(genreNavM[1])) !== null) {
+    while ((gm = genreRe.exec(genreUlHtml)) !== null) {
       const url   = gm[1];
       const name  = cleanText(gm[2]);
       const count = gm[3] ? parseInt(gm[3], 10) : 0;
@@ -214,26 +316,43 @@ function parseSiteExtra(html: string): SiteExtraData {
   }
 
   // ── Release years ─────────────────────────────────────────────────────────
-  // <nav class="releases"><h2>Release year</h2>
-  //   <ul class="releases scrolling">
-  //     <li><a href=".../release/2026/">2026</a></li>
-  //     ...
-  //   </ul>
-  // </nav>
+  //
+  // HTML structure (actual):
+  //   <div class="dt_mainmeta">
+  //     <nav class="releases">
+  //       <h2>Release year</h2>
+  //       <ul class="releases scrolling">
+  //         <li><a href="https://watchhentai.net/release/2026/">2026</a></li>
+  //         ...
+  //       </ul>
+  //     </nav>
+  //   </div>
+  //
+  // ROOT CAUSE: same lazy-regex issue as genres. The regex grabs content up to
+  // the first </nav> but the captures can terminate early.
+  //
+  // FIX: Same nesting-aware approach — find '<ul class="releases scrolling">',
+  // scan to the matching </ul>, then parse year links within that bounded range.
+
   const years: string[] = [];
-  const yearNavM = html.match(/<nav class="releases">([\s\S]*?)<\/nav>/i);
-  if (yearNavM) {
+
+  const relUlMarker = '<ul class="releases scrolling">';
+  const relUlStart  = html.indexOf(relUlMarker);
+  if (relUlStart !== -1) {
+    const relCloseIdx = html.toLowerCase().indexOf("</ul>", relUlStart + relUlMarker.length);
+    const relUlHtml   = relCloseIdx !== -1
+      ? html.slice(relUlStart + relUlMarker.length, relCloseIdx)
+      : html.slice(relUlStart + relUlMarker.length);
+
     const yearRe = /<a href="[^"]+\/release\/(\d{4})\/"[^>]*>/gi;
     let ym: RegExpExecArray | null;
-    while ((ym = yearRe.exec(yearNavM[1])) !== null) {
+    while ((ym = yearRe.exec(relUlHtml)) !== null) {
       years.push(ym[1]);
     }
   }
 
-  // ── Footer partner links ───────────────────────────────────────────────────
-  // <div class="lista-patners">
-  //   Friends » <a href="https://hentaiworld.tv/" title="Hentai World" ...>Hentai World</a>
-  // </div>
+  // ── Footer partner links ──────────────────────────────────────────────────
+  // <div class="lista-patners">Friends » <a href="...">Name</a> ...</div>
   const partnerLinks: { name: string; url: string }[] = [];
   const partnerBlockM = html.match(/<div class="lista-patners">([\s\S]*?)<\/div>/i);
   if (partnerBlockM) {
@@ -245,9 +364,7 @@ function parseSiteExtra(html: string): SiteExtraData {
   }
 
   // ── Footer nav links ──────────────────────────────────────────────────────
-  // <ul id="menu-footer" class="menu">
-  //   <li ...><a href="https://watchhentai.net/contact/">Contact</a></li>
-  // </ul>
+  // <ul id="menu-footer" class="menu"><li ...><a href="...">Contact</a></li></ul>
   const footerLinks: { name: string; url: string }[] = [];
   const footerMenuM = html.match(/<ul id="menu-footer"[^>]*>([\s\S]*?)<\/ul>/i);
   if (footerMenuM) {
@@ -258,8 +375,8 @@ function parseSiteExtra(html: string): SiteExtraData {
     }
   }
 
-  // ── Copyright ──────────────────────────────────────────────────────────────
-  // <div class="copy"><a href="/" title="Watch Hentai">WatchHentai.net</a> © 2025</div>
+  // ── Copyright ─────────────────────────────────────────────────────────────
+  // <div class="copy"><a href="/">WatchHentai.net</a> © 2025</div>
   const copyM = html.match(/<div class="copy">([\s\S]*?)<\/div>/i);
   const copyright = copyM
     ? cleanText(copyM[1].replace(/<[^>]+>/g, " "))
@@ -285,11 +402,8 @@ function parseSiteExtra(html: string): SiteExtraData {
 
 async function handleExtra(c: any) {
   try {
-    // All the extra data is present on any full page — we use the home page
-    // (or the search page for a "no results" example, both work identically).
     const html = await fetchPage("/");
     const data = parseSiteExtra(html);
-
     return c.json({
       success: true,
       data,
@@ -304,9 +418,7 @@ async function handleExtra(c: any) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Routes
-//
-//   GET /api/extra
+// Routes  —  GET /api/extra
 // ═══════════════════════════════════════════════════════════════════════════════
 
 extra.get("/", async (c) => handleExtra(c));
