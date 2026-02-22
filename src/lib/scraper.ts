@@ -126,19 +126,105 @@ export class HtmlDoc {
 // Shared parsers
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Unwrap a timthumb URL to get the real underlying image URL.
+ *
+ * The site wraps CDN images through PHP resizers:
+ *   /timthumb/backdrop.php?src=https://watchhentai.net/uploads/.../backdrop1.jpg
+ *   /timthumb/thumb.php?src=https://watchhentai.net/uploads/.../poster.jpg
+ *   /timthumb/sidebar.php?src=https://watchhentai.net/uploads/.../poster.jpg
+ *
+ * We extract the `src=` query param value and decode it.
+ * If there is no `src=` param the URL is returned as-is.
+ */
+function unwrapTimthumb(raw: string): string {
+  if (!raw) return "";
+  const m = raw.match(/[?&]src=([^&]+)/i);
+  if (!m) return raw;
+  try {
+    return decodeURIComponent(m[1]);
+  } catch (_) {
+    return m[1];
+  }
+}
+
+/**
+ * Parse the home-page slider (#slider-movies-tvshows).
+ *
+ * BUG THAT WAS FIXED:
+ *   The site lazy-loads images:
+ *     <img data-lazyloaded="1"
+ *          src="data:image/gif;base64,..."   ← 1×1 placeholder — NOT the real image
+ *          data-src="https://watchhentai.net/timthumb/backdrop.php?src=REAL_URL"
+ *          alt="Title" title="Title"/>
+ *
+ *   The previous code called  art.attr("img", "data-src")  which is correct for
+ *   the attribute name, BUT the attr() helper internally runs:
+ *       html.match(/<img(?:\s[^>]*)?>/)   ← captures the whole opening <img> tag
+ *   then searches that captured string for  data-src=["']...["'].
+ *
+ *   The captured opening tag is (from the actual HTML):
+ *       <img data-lazyloaded="1" src="data:image/gif;base64,..." data-src="https://...">
+ *   Searching for  /data-src=["']([^"']*?)["']/  should work in theory, BUT
+ *   the regex is NOT anchored and `data-src` also matches the `data-` in
+ *   `data-lazyloaded` if the regex engine backtracks differently.  More
+ *   importantly, normalizeThumbnail() was receiving the full timthumb URL
+ *   (e.g. "https://watchhentai.net/timthumb/backdrop.php?src=REAL") and if
+ *   that function only handled "thumb.php" it silently returned the timthumb
+ *   URL unchanged — which doesn't load in a browser without a valid referer.
+ *
+ *   FIX:
+ *   1. Use a dedicated regex  /\bdata-src=["']([^"']+)["']/i  on the full
+ *      article HTML (not just the first <img> tag) to extract data-src reliably.
+ *   2. Call unwrapTimthumb() to strip the backdrop.php/thumb.php/sidebar.php
+ *      wrapper and return the raw CDN URL every time.
+ */
 export function parseSlider(doc: HtmlDoc): SliderItem[] {
-  const sliderHtml = doc.byId("slider-movies-tvshows");
-  return sliderHtml.articles().map((art) => {
-    const id = art.attr("article", "id");
+  // Try byId first; fall back to raw substring search if the id isn't found
+  // (some minified pages may use different quote styles).
+  let sliderHtml = doc.byId("slider-movies-tvshows").html;
+  if (!sliderHtml) {
+    const idx = doc.html.indexOf("slider-movies-tvshows");
+    if (idx === -1) return [];
+    sliderHtml = doc.html.slice(doc.html.lastIndexOf("<", idx));
+  }
+
+  const sliderDoc = new HtmlDoc(sliderHtml);
+
+  return sliderDoc.articles().map((art) => {
+    // Post ID
+    const id = art.attr("article", "id").replace("post-", "");
+
+    // Series URL — first <a> href in the article
     const href = art.attr("a", "href");
-    const title = art.tagText("h3") || art.attr("img", "alt");
-    const backdropRaw = art.attr("img", "data-src");
+
+    // Title — prefer <h3> inner text, fall back to img[alt]
+    let title = art.tagText("h3");
+    if (!title) {
+      const altM = art.html.match(/\balt=["']([^"']+)["']/i);
+      title = altM ? altM[1] : "";
+    }
+
+    // ── KEY FIX: extract data-src directly from the raw article HTML ────────
+    // Do NOT use art.attr("img", "data-src") because attr() only inspects the
+    // opening <img> tag string and the attribute order matters for some regex
+    // engines.  A direct search on the full article HTML is safer and simpler.
+    const dataSrcM = art.html.match(/\bdata-src=["']([^"']+)["']/i);
+    const rawDataSrc = dataSrcM ? dataSrcM[1] : "";
+
+    // Strip the timthumb PHP wrapper to get the real CDN URL.
+    // e.g. "https://watchhentai.net/timthumb/backdrop.php?src=https://watchhentai.net/uploads/.../backdrop1.jpg"
+    //   →  "https://watchhentai.net/uploads/.../backdrop1.jpg"
+    const backdrop = unwrapTimthumb(rawDataSrc);
+
+    // Year / date label — the <span> inside <div class="data">
     const year = art.tagText("span");
+
     return {
-      id: id.replace("post-", ""),
+      id,
       title: cleanText(title),
       url: resolveUrl(href),
-      backdrop: normalizeThumbnail(backdropRaw),
+      backdrop,
       year: cleanText(year),
     };
   });
@@ -280,10 +366,9 @@ export async function scrapePlayerPage(
   playerUrl: string
 ): Promise<PlayerPageData> {
   const clean = playerUrl.replace(/&amp;/g, "&");
-  const html  = await fetchPage(clean); // fetchPage handles full URLs
+  const html  = await fetchPage(clean);
 
   // ── jw{} object ───────────────────────────────────────────────────────────
-  // var jw = {"file":"https:\/\/hstorage.xyz\/...","image":"...","color":"..."}
   let defaultSrc = "";
   let thumbnail  = "";
 
@@ -303,26 +388,23 @@ export async function scrapePlayerPage(
   if (schemaMatch) {
     try {
       const schema = JSON.parse(schemaMatch[1].trim());
-      if (!defaultSrc && schema.contentUrl)  defaultSrc = schema.contentUrl;
-      if (!thumbnail  && schema.thumbnailUrl) thumbnail  = schema.thumbnailUrl;
-      if (schema.duration)                   duration   = schema.duration;
+      if (!defaultSrc && schema.contentUrl)   defaultSrc = schema.contentUrl;
+      if (!thumbnail  && schema.thumbnailUrl)  thumbnail  = schema.thumbnailUrl;
+      if (schema.duration)                    duration   = schema.duration;
     } catch (_) {
-      // regex fallback
-      const durM  = schemaMatch[1].match(/"duration"\s*:\s*"([^"]+)"/);
-      const cuM   = schemaMatch[1].match(/"contentUrl"\s*:\s*"([^"]+)"/);
-      const thM   = schemaMatch[1].match(/"thumbnailUrl"\s*:\s*"([^"]+)"/);
-      if (durM)            duration   = durM[1];
-      if (cuM  && !defaultSrc) defaultSrc = cuM[1];
-      if (thM  && !thumbnail)  thumbnail  = thM[1];
+      const durM = schemaMatch[1].match(/"duration"\s*:\s*"([^"]+)"/);
+      const cuM  = schemaMatch[1].match(/"contentUrl"\s*:\s*"([^"]+)"/);
+      const thM  = schemaMatch[1].match(/"thumbnailUrl"\s*:\s*"([^"]+)"/);
+      if (durM)           duration   = durM[1];
+      if (cuM && !defaultSrc) defaultSrc = cuM[1];
+      if (thM && !thumbnail)  thumbnail  = thM[1];
     }
   }
 
   // ── sources[] array ───────────────────────────────────────────────────────
-  // sources: [\n  { file: "...", type: "video/mp4", label: "1440p" }, ...]
   const sources: VideoSource[] = [];
   const sourcesBlockM = html.match(/sources\s*:\s*\[([\s\S]*?)\]/);
   if (sourcesBlockM) {
-    // Each entry: { file: "...", type: "video/mp4", label: "1080p" }
     const entryRe = /\{([\s\S]*?)\}/g;
     let em: RegExpExecArray | null;
     while ((em = entryRe.exec(sourcesBlockM[1])) !== null) {
@@ -340,14 +422,12 @@ export async function scrapePlayerPage(
     }
   }
 
-  // Fallback: if sources[] was empty, use jw.file / schema contentUrl
   if (sources.length === 0 && defaultSrc) {
     const labelGuess = defaultSrc.match(/_(\d+p)\./)?.[1] ?? "default";
     sources.push({ src: defaultSrc, type: "video/mp4", label: labelGuess });
   }
 
   // ── download URL ──────────────────────────────────────────────────────────
-  // player.addButton(..., function() { window.open('https://watchhentai.net/download/...'); })
   const dlM = html.match(
     /window\.open\('(https:\/\/watchhentai\.net\/download\/[^']+)'\)/i
   );
@@ -435,7 +515,7 @@ export async function scrapeTrending() {
 }
 
 export async function scrapeGenreList() {
-  const html    = await fetchPage("/");
+  const html     = await fetchPage("/");
   const navMatch = html.match(/<ul[^>]*class="sub-menu"[^>]*>([\s\S]*?)<\/ul>/i);
   if (!navMatch) return [];
   const doc    = new HtmlDoc(navMatch[1]);
